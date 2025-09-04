@@ -8,7 +8,7 @@ use std::{ffi::c_int, fmt::Error, mem};
 use syscalls::Errno;
 
 /// Currently, Linux supports the scheduling policies defined in this enum.
-#[derive(PartialEq, Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Policy {
     ///The standard round-robin time-sharing policy
     Normal,
@@ -59,7 +59,8 @@ impl Policy {
 }
 
 bitflags! {
-    /// These flags control the scheduling behavior:
+    /// These flags control the scheduling behavior
+    #[derive(Debug, Clone, PartialEq)]
     pub struct SchedFlags: std::ffi::c_short {
         /// Children created by fork(2) do not inherit
         /// privileged scheduling policies. See sched(7) for
@@ -100,6 +101,7 @@ bitflags! {
 }
 
 ///Structure containing the scheduling policy and attributes for the specified thread.
+#[derive(Debug, Clone, PartialEq)]
 pub struct Attributes {
     /// This field specifies the scheduling policy, as one of the values of the enum.
     pub policy: Policy,
