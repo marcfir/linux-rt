@@ -18,8 +18,8 @@ syscalls = { version = "0.6.18", features = [
     "aarch64",
     "riscv64",
 ] }
-bitflags = "2.4"
+bitflags = "2.9"
 
 [dev-dependencies]
 libc = { version = "0.2" }
-nix = { version = "0.29", features = ["process", "sched"] }
+nix = { version = "0.30", features = ["process", "sched"] }
