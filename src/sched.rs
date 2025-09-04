@@ -144,10 +144,14 @@ pub struct Attributes {
     pub sched_util_max: u32,
 }
 
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub struct Pid(pid_t);
 impl Pid {
     pub fn as_raw(&self) -> pid_t {
         self.0
+    }
+    pub fn from_raw(raw: pid_t) -> Self {
+        Self(raw)
     }
     pub fn this() -> Self {
         Self(0)
