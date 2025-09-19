@@ -1,12 +1,15 @@
-use syscalls::Errno;
-
 use crate::lowlevel::clock::{
     clock_gettime, clock_nanosleep, clock_settime, clockid_t, TimeSpec, CLOCK_BOOTTIME,
     CLOCK_BOOTTIME_ALARM, CLOCK_MONOTONIC, CLOCK_MONOTONIC_COARSE, CLOCK_MONOTONIC_RAW,
     CLOCK_PROCESS_CPUTIME_ID, CLOCK_REALTIME, CLOCK_REALTIME_ALARM, CLOCK_REALTIME_COARSE,
     CLOCK_TAI, CLOCK_THREAD_CPUTIME_ID, TIMER_ABSTIME,
 };
+use syscalls::Errno;
 
+/// The [ClockId] is the identifier of the particular clock on
+/// which to act. A clock may be system-wide and hence visible for
+/// all processes, or per-process if it measures time only within a
+/// single process.
 #[derive(Debug, Clone, Copy)]
 pub enum ClockId {
     /// A settable system-wide clock that measures real (i.e., wall-
@@ -91,6 +94,7 @@ pub enum ClockId {
     ClockThreadCputimeId,
 }
 impl ClockId {
+    /// Get the raw `clockid_t`.
     pub const fn as_raw(&self) -> clockid_t {
         match self {
             ClockId::ClockRealtime => CLOCK_REALTIME,
@@ -106,6 +110,7 @@ impl ClockId {
             ClockId::ClockThreadCputimeId => CLOCK_THREAD_CPUTIME_ID,
         }
     }
+    /// Creates [ClockId] from raw `clockid_t`.
     pub const fn from_raw(clockid: clockid_t) -> Option<Self> {
         match clockid {
             CLOCK_REALTIME => Some(ClockId::ClockRealtime),
@@ -124,21 +129,53 @@ impl ClockId {
     }
 }
 
+/// Retrieve the time of the specified clock [ClockId].
 pub fn get_time(clockid: ClockId) -> Result<TimeSpec, Errno> {
     let mut tp = TimeSpec::zeroed();
     unsafe { clock_gettime(clockid.as_raw(), &mut tp).and(Ok(tp)) }
 }
 
+/// Set the time `tp` of the specified clock [ClockId].
 pub fn set_time(clockid: ClockId, tp: TimeSpec) -> Result<(), Errno> {
     unsafe { clock_settime(clockid.as_raw(), &tp).and(Ok(())) }
 }
 
-pub fn nanosleep_relative(clockid: ClockId, tp: TimeSpec) -> Result<(), Errno> {
-    unsafe { clock_nanosleep(clockid.as_raw(), 0, &tp, core::ptr::null_mut()).and(Ok(())) }
+/// The [nanosleep_relative] function shall cause the current thread to be
+/// suspended from execution until either the time interval specified
+/// by the `ts` argument has elapsed, or a signal is delivered to the
+/// calling thread and its action is to invoke a signal-catching
+/// function, or the process is terminated. The clock used to measure
+/// the time shall be the clock specified by [ClockId].
+pub fn nanosleep_relative(clockid: ClockId, ts: TimeSpec) -> Result<(), Errno> {
+    unsafe { clock_nanosleep(clockid.as_raw(), 0, &ts, core::ptr::null_mut()).and(Ok(())) }
 }
-pub fn nanosleep_absolute(clockid: ClockId, tp: TimeSpec) -> Result<(), Errno> {
+/// The [nanosleep_absolute] function shall cause the current thread to be
+/// suspended from execution until either the time value of the clock
+/// specified by [ClockId] reaches the absolute time specified by the
+/// `ts` argument, or a signal is delivered to the calling thread and
+/// its action is to invoke a signal-catching function, or the process
+/// is terminated.  If, at the time of the call, the time value
+/// specified by `ts` is less than or equal to the time value of the
+/// specified clock, then [nanosleep_absolute] shall return immediately
+/// and the calling process shall not be suspended.
+pub fn nanosleep_absolute(clockid: ClockId, ts: TimeSpec) -> Result<(), Errno> {
     unsafe {
-        clock_nanosleep(clockid.as_raw(), TIMER_ABSTIME, &tp, core::ptr::null_mut()).and(Ok(()))
+        clock_nanosleep(clockid.as_raw(), TIMER_ABSTIME, &ts, core::ptr::null_mut()).and(Ok(()))
+    }
+}
+
+/// Like [nanosleep_relative] but returns the amount of time remaining in the
+/// interval (the requested time minus the time actually slept)
+pub fn nanosleep_relative_with_remain(clockid: ClockId, ts: TimeSpec) -> Result<TimeSpec, Errno> {
+    let mut remaining = TimeSpec::new();
+    unsafe { clock_nanosleep(clockid.as_raw(), 0, &ts, &raw mut remaining).and(Ok(remaining)) }
+}
+/// Like [nanosleep_absolute] but returns the amount of time remaining in the
+/// interval (the requested time minus the time actually slept)
+pub fn nanosleep_absolute_with_remain(clockid: ClockId, ts: TimeSpec) -> Result<TimeSpec, Errno> {
+    let mut remaining = TimeSpec::new();
+    unsafe {
+        clock_nanosleep(clockid.as_raw(), TIMER_ABSTIME, &ts, &raw mut remaining).and(Ok(remaining))
     }
 }
 
@@ -155,7 +192,15 @@ mod tests {
 
     #[test]
     fn test_sleep() {
-        let time = nanosleep_relative(
+        nanosleep_relative(
+            ClockId::ClockMonotonic,
+            TimeSpec {
+                tv_sec: 0,
+                tv_nsec: 1_000_000,
+            },
+        )
+        .unwrap();
+        nanosleep_relative_with_remain(
             ClockId::ClockMonotonic,
             TimeSpec {
                 tv_sec: 0,

@@ -30,9 +30,12 @@ pub enum Policy {
 }
 
 impl Policy {
+    /// Consume the policy to convert it into a raw value.
     pub fn into_raw(self) -> u32 {
         self.as_raw()
     }
+
+    /// Get the policy as raw value.
     pub fn as_raw(&self) -> u32 {
         match self {
             Policy::Batch => SCHED_BATCH,
@@ -44,6 +47,8 @@ impl Policy {
             Policy::Ext => SCHED_EXT,
         }
     }
+
+    /// Create a [Policy] from a raw value.
     pub fn from_raw(raw: u32) -> Result<Policy, Error> {
         match raw {
             SCHED_NORMAL => Ok(Policy::Normal),
@@ -146,21 +151,26 @@ pub struct Attributes {
     pub sched_util_max: u32,
 }
 
+/// Process identifier.
+/// Newtype arround `pid_t`
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct Pid(pid_t);
 impl Pid {
+    /// Gets a raw `pid_t` from a [Pid]
     pub fn as_raw(&self) -> pid_t {
         self.0
     }
+    /// Creates a [Pid] from a raw `pid_t`
     pub fn from_raw(raw: pid_t) -> Self {
         Self(raw)
     }
+    /// Returns the [Pid] of the calling process/thread
     pub fn this() -> Self {
         Self(0)
     }
 }
 
-/// The `get_attr()` function wraps the `sched_getattr()` system call and fetches the scheduling policy and
+/// The [get_attr()] function wraps the `sched_getattr()` system call and fetches the scheduling policy and
 /// the associated attributes for the thread whose ID is specified in pid.
 pub fn get_attr(pid: Pid) -> Result<Attributes, Errno> {
     let mut attr = SchedAttr {
@@ -203,7 +213,7 @@ pub fn get_attr(pid: Pid) -> Result<Attributes, Errno> {
     }
 }
 
-/// The `set_attr()` function wraps the `sched_setattr()` system call and sets the scheduling policy and
+/// The [set_attr()] function wraps the `sched_setattr()` system call and sets the scheduling policy and
 /// associated attributes for the thread whose ID is specified in pid.
 pub fn set_attr(pid: Pid, attr: Attributes) -> Result<(), Errno> {
     let mut attr = SchedAttr {
@@ -221,6 +231,9 @@ pub fn set_attr(pid: Pid, attr: Attributes) -> Result<(), Errno> {
 
     unsafe { sched_set_attr(pid.as_raw(), &mut attr, 0) }.and(Ok(()))
 }
+
+/// Sets the scheduling policy with a `nice` value to other.
+/// See [Attributes::nice] for more info.
 pub fn set_other(pid: Pid, nice: i32) -> Result<(), Errno> {
     let att_other = Attributes {
         policy: Policy::Normal,
@@ -421,13 +434,11 @@ mod tests {
         get_priority_min(Policy::Fifo).unwrap();
     }
 
-    // #[test]
-    // fn test_affinity() {
-    //     let mut set = get_affinity(Pid::this()).unwrap();
-    //     set.unset(0).unwrap();
-    //     set_affinity(Pid::this(), &set).unwrap();
-    //     set.set(0).unwrap();
-    //     set_affinity(Pid::this(), &set).unwrap();
-    //     assert!(get_affinity(Pid::this()).unwrap().is_set(0).unwrap());
-    // }
+    #[test]
+    fn test_affinity() {
+        let set = get_affinity(Pid::this()).unwrap();
+        set_affinity(Pid::this(), set.clone()).unwrap();
+        let set = set.set(0);
+        set_affinity(Pid::this(), set).unwrap();
+    }
 }
