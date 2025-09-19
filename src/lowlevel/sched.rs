@@ -68,6 +68,7 @@ const CPU_SET_SIZE: usize = 16;
 type Map = u64;
 
 /// A CPU affinity mask is represented by this structure.
+#[repr(C)]
 #[derive(Debug, PartialEq, Clone)]
 pub struct CpuSet {
     bits: [Map; CPU_SET_SIZE],
