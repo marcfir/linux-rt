@@ -1,15 +1,13 @@
 [package]
-name = "rtsched-rs"
-version = "0.2.1"
+name = "linux-rt"
+version = "0.3.0"
 edition = "2021"
 authors = ["Marc Fischer <marcfir@proton.me>"]
 license = "MIT OR Apache-2.0"
-description = "Rust friendly wrapper for sched_attr on Linux"
+description = "Rust friendly wrapper for Linux Real-time functions"
 keywords = ["scheduling", "linux", "rt", "real-time"]
 categories = ["os::linux-apisos::linux-apissched"]
 repository = "https://github.com/marcfir/rtsched-rs"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 syscalls = { version = "=0.6.18", features = [
