@@ -12,7 +12,7 @@ repository = "https://github.com/marcfir/rtsched-rs"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-syscalls = { version = "0.6.18", features = [
+syscalls = { version = "=0.6.18", features = [
     "x86",
     "x86_64",
     "aarch64",
@@ -23,3 +23,4 @@ bitflags = "2.9"
 [dev-dependencies]
 libc = { version = "0.2" }
 nix = { version = "0.30", features = ["process", "sched"] }
+serde_repr = ">=0.1.5"                                      # Unused but forced for -Z minimal-versions

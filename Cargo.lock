@@ -63,6 +63,7 @@ dependencies = [
  "bitflags",
  "libc",
  "nix",
+ "serde_repr",
  "syscalls",
 ]
 
