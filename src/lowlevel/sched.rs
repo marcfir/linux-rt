@@ -67,22 +67,26 @@ const CPU_SET_SIZE: usize = 16;
 #[cfg(not(target_pointer_width = "32"))]
 type Map = u64;
 
-#[repr(C)]
-#[derive(Debug, PartialEq)]
+/// A CPU affinity mask is represented by this structure.
+#[derive(Debug, PartialEq, Clone)]
 pub struct CpuSet {
     bits: [Map; CPU_SET_SIZE],
 }
 impl CpuSet {
+    /// Create a empty [CpuSet]
     pub const fn empty() -> Self {
         Self {
             bits: [0; CPU_SET_SIZE],
         }
     }
+
+    /// Create a full [CpuSet]
     pub const fn full() -> Self {
         Self {
             bits: [Map::MAX; CPU_SET_SIZE],
         }
     }
+
     pub(crate) const fn as_raw(&self) -> *const CpuSet {
         self
     }
@@ -91,28 +95,32 @@ impl CpuSet {
         self
     }
 
+    /// Add CPU `core` to the [CpuSet].
     pub const fn set(self, core: usize) -> Self {
         let mut cs = self;
-        let idx = core / size_of::<Map>();
-        let bit = core % size_of::<Map>();
+        let idx = core / Map::BITS as usize;
+        let bit = core % Map::BITS as usize;
         cs.bits[idx] |= 1 << bit;
         cs
     }
 
+    /// Clear CPU `core` to the [CpuSet].
     pub const fn clear(self, core: usize) -> Self {
         let mut cs = self;
-        let idx = core / size_of::<Map>();
-        let bit = core % size_of::<Map>();
-        cs.bits[idx] &= 1 << bit;
+        let idx = core / Map::BITS as usize;
+        let bit = core % Map::BITS as usize;
+        cs.bits[idx] &= !(1 << bit);
         cs
     }
 
+    /// Checks whether the `core` is set in the [CpuSet].
     pub const fn is_set(&mut self, core: usize) -> bool {
-        let idx = core / size_of::<Map>();
-        let bit = core % size_of::<Map>();
+        let idx = core / Map::BITS as usize;
+        let bit = core % Map::BITS as usize;
         self.bits[idx] & (1 << bit) > 0
     }
 
+    /// Returns the size of [CpuSet] in bytes
     pub const fn size_of() -> usize {
         size_of::<Self>()
     }
@@ -127,6 +135,12 @@ impl CpuSet {
 /// If the thread specified by pid is not currently running on one of
 /// the CPUs specified in mask, then that thread is migrated to one of
 /// the CPUs specified in mask.
+///
+/// On success, the raw sched_getaffinity() system call returns the
+/// number of bytes placed copied into the mask buffer; this will be
+/// the minimum of cpusetsize and the size (in bytes) of the cpumask_t
+/// data type that is used internally by the kernel to represent the
+/// CPU set bit mask.
 #[allow(clippy::missing_safety_doc)]
 pub unsafe fn sched_set_affinity(
     pid: pid_t,
@@ -197,43 +211,85 @@ mod test {
     #[test]
     fn test_cpuset() {
         let test = CpuSet::full();
-        #[cfg(not(target_pointer_width = "32"))]
+
         assert_eq!(
             test,
             CpuSet {
-                bits: [u64::MAX; 16]
-            }
+                #[cfg(not(target_pointer_width = "32"))]
+                bits: [u64::MAX; 16],
+                #[cfg(target_pointer_width = "32")]
+                bits: [u32::MAX; 32],
+            },
         );
 
         let test = CpuSet::empty();
-        #[cfg(not(target_pointer_width = "32"))]
-        assert_eq!(test, CpuSet { bits: [0; 16] });
-
-        let test = CpuSet::empty().set(1);
-        #[cfg(not(target_pointer_width = "32"))]
         assert_eq!(
             test,
             CpuSet {
-                bits: [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+                #[cfg(not(target_pointer_width = "32"))]
+                bits: [0; 16],
+                #[cfg(target_pointer_width = "32")]
+                bits: [0; 32],
             }
         );
+
+        let test = CpuSet::empty().set(1);
+
+        assert_eq!(
+            test,
+            CpuSet {
+                #[cfg(not(target_pointer_width = "32"))]
+                bits: [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                #[cfg(target_pointer_width = "32")]
+                bits: [
+                    2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0
+                ],
+            }
+        );
+    }
+
+    #[test]
+    fn test_cpuset_ops() {
+        let test = CpuSet {
+            #[cfg(not(target_pointer_width = "32"))]
+            bits: [0xFFFF, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            #[cfg(target_pointer_width = "32")]
+            bits: [
+                0xFFFF, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0,
+            ],
+        }
+        .clear(0);
+        assert_eq!(test.bits[0], 0xFFFE);
+        let test = test.clear(7).clear(9).clear(8).clear(4);
+        assert_eq!(test.bits[0], 0xFC6E);
+        #[cfg(not(target_pointer_width = "32"))]
+        assert_eq!(CpuSet::empty().set(63).bits[0], 0x8000000000000000);
+        #[cfg(target_pointer_width = "32")]
+        assert_eq!(CpuSet::empty().set(63).bits[1], 0x80000000);
+
+        #[cfg(not(target_pointer_width = "32"))]
+        assert_eq!(CpuSet::empty().set(64).bits[1], 1);
+        #[cfg(target_pointer_width = "32")]
+        assert_eq!(CpuSet::empty().set(64).bits[3], 1);
     }
 
     #[test]
     fn test_affinity() {
         let mut cs_libc = unsafe { std::mem::zeroed() };
         unsafe { libc::CPU_ZERO(&mut cs_libc) };
-        let x =
+        let ret_libc =
             unsafe { libc::sched_getaffinity(0, size_of_val(&cs_libc), &mut cs_libc as *mut _) };
-        println!("{x}");
-        // libc::cpu_set_t
-        let mut cs = CpuSet::full();
-        let ret = unsafe { sched_get_affinity(0, CpuSet::size_of(), cs.as_mut_raw()) };
-        println!("{cs:?}");
-        println!("{ret:?}");
-        assert!(ret.is_ok());
-        let ret = unsafe { sched_set_affinity(0, size_of::<CpuSet>(), CpuSet::full().as_raw()) };
+        assert_eq!(ret_libc, 0);
 
-        assert_eq!(ret, Ok(0))
+        let mut cs = CpuSet::empty();
+        let ret = unsafe { sched_get_affinity(0, CpuSet::size_of(), cs.as_mut_raw()) };
+        assert!(ret.is_ok());
+        assert!(ret.unwrap() > 0); // Check whether the result reflects at least one byte being written.
+        assert_eq!(
+            unsafe { std::mem::transmute::<libc::cpu_set_t, [Map; CPU_SET_SIZE]>(cs_libc) },
+            cs.bits
+        );
     }
 }
