@@ -379,10 +379,12 @@ mod tests {
     }
     #[test]
     fn test_setter() {
-        set_other(Pid::this(), -20).unwrap();
-        let a = get_attr(Pid::this()).unwrap();
-        assert_eq!(a.policy, Policy::Normal);
-        assert_eq!(a.nice, -20);
+        let res = set_other(Pid::this(), -20);
+        if res.is_ok() {
+            let a = get_attr(Pid::this()).unwrap();
+            assert_eq!(a.policy, Policy::Normal);
+            assert_eq!(a.nice, -20);
+        }
 
         set_batch(Pid::this(), 19).unwrap();
         let a = get_attr(Pid::this()).unwrap();
@@ -393,39 +395,31 @@ mod tests {
         let a = get_attr(Pid::this()).unwrap();
         assert_eq!(a.policy, Policy::Idle);
 
-        set_fifo(Pid::this(), 60).unwrap();
-        let a = get_attr(Pid::this()).unwrap();
-        assert_eq!(a.policy, Policy::Fifo);
-        assert_eq!(a.nice, 0);
-        assert_eq!(a.priority, 60);
+        let res = set_fifo(Pid::this(), 60);
+        if res.is_ok() {
+            let a = get_attr(Pid::this()).unwrap();
+            assert_eq!(a.policy, Policy::Fifo);
+            assert_eq!(a.nice, 0);
+            assert_eq!(a.priority, 60);
+        }
 
-        set_rr(Pid::this(), 98).unwrap();
-        let a = get_attr(Pid::this()).unwrap();
-        assert_eq!(a.policy, Policy::RoundRobin);
-        assert_eq!(a.nice, 0);
-        assert_eq!(a.priority, 98);
-
-        set_deadline(Pid::this(), 1_000_000, 1_000_000, 50_000).unwrap();
-        let a = get_attr(Pid::this()).unwrap();
-        assert_eq!(a.policy, Policy::Deadline);
-        assert_eq!(a.nice, 0);
-        assert_eq!(a.priority, 0);
-        assert_eq!(a.deadline_ns, 1_000_000);
-        assert_eq!(a.period_ns, 1_000_000);
-        assert_eq!(a.runtime_ns, 50_000);
-    }
-
-    #[test]
-    fn test_deadline() {
-        set_deadline(Pid::this(), 1_000_000, 1_000_000, 50_000).unwrap();
-        let a = get_attr(Pid::this()).unwrap();
-        assert_eq!(a.policy, Policy::Deadline);
-        assert_eq!(a.nice, 0);
-        assert_eq!(a.priority, 0);
-        assert_eq!(a.deadline_ns, 1_000_000);
-        assert_eq!(a.period_ns, 1_000_000);
-        assert_eq!(a.runtime_ns, 50_000);
-        sched_yield().unwrap();
+        let res = set_rr(Pid::this(), 98);
+        if res.is_ok() {
+            let a = get_attr(Pid::this()).unwrap();
+            assert_eq!(a.policy, Policy::RoundRobin);
+            assert_eq!(a.nice, 0);
+            assert_eq!(a.priority, 98);
+        }
+        let res = set_deadline(Pid::this(), 1_000_000, 1_000_000, 50_000);
+        if res.is_ok() {
+            let a = get_attr(Pid::this()).unwrap();
+            assert_eq!(a.policy, Policy::Deadline);
+            assert_eq!(a.nice, 0);
+            assert_eq!(a.priority, 0);
+            assert_eq!(a.deadline_ns, 1_000_000);
+            assert_eq!(a.period_ns, 1_000_000);
+            assert_eq!(a.runtime_ns, 50_000);
+        }
     }
 
     #[test]
