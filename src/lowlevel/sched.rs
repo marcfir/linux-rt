@@ -81,6 +81,24 @@ impl CpuSet {
         }
     }
 
+    /// Create a [CpuSet] from a bitmask
+    pub const fn from_bitmask(bitmask: u64) -> Self {
+        let mut cpuset = CpuSet::empty();
+        #[cfg(not(target_pointer_width = "32"))]
+        {
+            cpuset.bits[0] = bitmask;
+        }
+        #[cfg(target_pointer_width = "32")]
+        {
+            let bytes = bitmask.to_le_bytes();
+            let low = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+            let high = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
+            cpuset.bits[0] = low;
+            cpuset.bits[1] = high;
+        }
+        cpuset
+    }
+
     /// Create a full [CpuSet]
     pub const fn full() -> Self {
         Self {
@@ -274,6 +292,17 @@ mod test {
         assert_eq!(CpuSet::empty().set(64).bits[1], 1);
         #[cfg(target_pointer_width = "32")]
         assert_eq!(CpuSet::empty().set(64).bits[3], 1);
+
+        #[cfg(not(target_pointer_width = "32"))]
+        assert_eq!(
+            CpuSet::from_bitmask(0x808000841000410).bits[0],
+            0x808000841000410
+        );
+        #[cfg(target_pointer_width = "32")]
+        assert_eq!(
+            CpuSet::from_bitmask(0x808000841000410).bits[0..=1],
+            [0x41000410, 0x8080008]
+        );
     }
 
     #[test]
