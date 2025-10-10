@@ -1,8 +1,8 @@
 use crate::lowlevel::clock::{
-    clock_gettime, clock_nanosleep, clock_settime, clockid_t, TimeSpec, CLOCK_BOOTTIME,
-    CLOCK_BOOTTIME_ALARM, CLOCK_MONOTONIC, CLOCK_MONOTONIC_COARSE, CLOCK_MONOTONIC_RAW,
-    CLOCK_PROCESS_CPUTIME_ID, CLOCK_REALTIME, CLOCK_REALTIME_ALARM, CLOCK_REALTIME_COARSE,
-    CLOCK_TAI, CLOCK_THREAD_CPUTIME_ID, TIMER_ABSTIME,
+    clock_adjtime, clock_gettime, clock_nanosleep, clock_settime, clockid_t, TimeSpec, Timeval,
+    TimexRaw, CLOCK_BOOTTIME, CLOCK_BOOTTIME_ALARM, CLOCK_MONOTONIC, CLOCK_MONOTONIC_COARSE,
+    CLOCK_MONOTONIC_RAW, CLOCK_PROCESS_CPUTIME_ID, CLOCK_REALTIME, CLOCK_REALTIME_ALARM,
+    CLOCK_REALTIME_COARSE, CLOCK_TAI, CLOCK_THREAD_CPUTIME_ID, TIMER_ABSTIME,
 };
 use syscalls::Errno;
 
@@ -140,6 +140,16 @@ pub fn set_time(clockid: ClockId, tp: TimeSpec) -> Result<(), Errno> {
     unsafe { clock_settime(clockid.as_raw(), &tp).and(Ok(())) }
 }
 
+/// Takes a `Timex` structure, updates kernel parameters from (selected) field
+/// values, and updates the same structure with the current
+/// kernel values.
+pub fn adjust_time(clockid: ClockId, timex: &mut Timex) -> Result<(), Errno> {
+    let mut timex_raw = TimexRaw::from_timex(timex);
+    unsafe { clock_adjtime(clockid.as_raw(), &raw mut timex_raw).and(Ok(())) }?;
+    *timex = timex_raw.into_timex();
+    Ok(())
+}
+
 /// The [nanosleep_relative] function shall cause the current thread to be
 /// suspended from execution until either the time interval specified
 /// by the `ts` argument has elapsed, or a signal is delivered to the
@@ -179,6 +189,158 @@ pub fn nanosleep_absolute_with_remain(clockid: ClockId, ts: TimeSpec) -> Result<
     }
 }
 
+/// The modes field determines which parameters, if any, to set.  It is a bit mask
+/// containing a bitwise OR combination of zero or more of the
+/// following bits:
+#[repr(C)]
+#[derive(Debug, Clone, Default)]
+pub struct TimexMode(std::ffi::c_uint);
+impl TimexMode {
+    /// time offset
+    pub const ADJ_OFFSET: std::ffi::c_uint = 0x0001;
+    /// frequency offset
+    pub const ADJ_FREQUENCY: std::ffi::c_uint = 0x0002;
+    /// maximum time error
+    pub const ADJ_MAXERROR: std::ffi::c_uint = 0x0004;
+    /// estimated time error
+    pub const ADJ_ESTERROR: std::ffi::c_uint = 0x0008;
+    /// clock status
+    pub const ADJ_STATUS: std::ffi::c_uint = 0x0010;
+    /// pll time constant
+    pub const ADJ_TIMECONST: std::ffi::c_uint = 0x0020;
+    /// set TAI offset
+    pub const ADJ_TAI: std::ffi::c_uint = 0x0080;
+    /// add 'time' to current time
+    pub const ADJ_SETOFFSET: std::ffi::c_uint = 0x0100;
+    /// select microsecond resolution
+    pub const ADJ_MICRO: std::ffi::c_uint = 0x1000;
+    /// select nanosecond resolution
+    pub const ADJ_NANO: std::ffi::c_uint = 0x2000;
+    /// tick value
+    pub const ADJ_TICK: std::ffi::c_uint = 0x4000;
+    /// Check if `mode` is set.
+    pub fn is_set(&self, mode: std::ffi::c_uint) -> bool {
+        self.0 & mode == mode
+    }
+    /// Set a `mode`
+    pub fn set(&mut self, mode: std::ffi::c_uint) {
+        self.0 |= mode;
+    }
+    pub(crate) fn as_raw(&self) -> std::ffi::c_uint {
+        self.0
+    }
+
+    pub(crate) fn from_raw(raw: std::ffi::c_uint) -> Self {
+        Self(raw)
+    }
+}
+
+/// The buf.status field is a bit mask that is used to set and/or
+/// retrieve status bits associated with the NTP implementation.  Some
+/// bits in the mask are both readable and settable, while others are
+/// read-only.
+#[repr(C)]
+#[derive(Debug, Clone, Default)]
+pub struct StatusCodes(std::ffi::c_int);
+impl StatusCodes {
+    /// enable PLL updates (rw)
+    pub const STA_PLL: std::ffi::c_int = 0x0001;
+    /// enable PPS freq discipline (rw)
+    pub const STA_PPSFREQ: std::ffi::c_int = 0x0002;
+    /// enable PPS time discipline (rw)
+    pub const STA_PPSTIME: std::ffi::c_int = 0x0004;
+    /// select frequency-lock mode (rw)
+    pub const STA_FLL: std::ffi::c_int = 0x0008;
+    /// insert leap (rw)
+    pub const STA_INS: std::ffi::c_int = 0x0010;
+    /// delete leap (rw)
+    pub const STA_DEL: std::ffi::c_int = 0x0020;
+    /// clock unsynchronized (rw)
+    pub const STA_UNSYNC: std::ffi::c_int = 0x0040;
+    /// hold frequency (rw)
+    pub const STA_FREQHOLD: std::ffi::c_int = 0x0080;
+    /// PPS signal present (ro)
+    pub const STA_PPSSIGNAL: std::ffi::c_int = 0x0100;
+    /// PPS signal jitter exceeded (ro)
+    pub const STA_PPSJITTER: std::ffi::c_int = 0x0200;
+    /// PPS signal wander exceeded (ro)
+    pub const STA_PPSWANDER: std::ffi::c_int = 0x0400;
+    /// PPS signal calibration error (ro)
+    pub const STA_PPSERROR: std::ffi::c_int = 0x0800;
+    /// clock hardware fault (ro)
+    pub const STA_CLOCKERR: std::ffi::c_int = 0x1000;
+    /// resolution (0 = us, 1 = ns) (ro)
+    pub const STA_NANO: std::ffi::c_int = 0x2000;
+    /// mode (0 = PLL, 1 = FLL) (ro)
+    pub const STA_MODE: std::ffi::c_int = 0x4000;
+    /// clock source (0 = A, 1 = B) (ro)
+    pub const STA_CLK: std::ffi::c_int = 0x8000;
+    /// Check if `status_code` is set.
+    pub fn is_set(&self, status_code: std::ffi::c_int) -> bool {
+        self.0 & status_code == status_code
+    }
+    /// Set a `status_code`
+    pub fn set(&mut self, status_code: std::ffi::c_int) {
+        self.0 |= status_code;
+    }
+    pub(crate) fn as_raw(&self) -> std::ffi::c_int {
+        self.0
+    }
+
+    pub(crate) fn from_raw(raw: std::ffi::c_int) -> Self {
+        Self(raw)
+    }
+}
+
+/// Required fields to update a clock
+#[derive(Debug, Clone, Default)]
+pub struct Timex {
+    /// Mode selector for `adjtimex`.
+    pub modes: TimexMode,
+    /// Time offset; nanoseconds if `STA_NANO` is set, otherwise microseconds.
+    pub offset: std::ffi::c_longlong,
+    /// Frequency offset (see `man 2 adjtimex` for units).
+    pub freq: std::ffi::c_longlong,
+    /// Maximum error in microseconds.
+    pub maxerror: std::ffi::c_longlong,
+    /// Estimated error in microseconds.
+    pub esterror: std::ffi::c_longlong,
+    /// Clock command/status flags.
+    pub status: StatusCodes,
+    /// PLL (phase-locked loop) time constant.
+    pub constant: std::ffi::c_longlong,
+    /// Clock precision (microseconds, read-only).
+    pub precision: std::ffi::c_longlong,
+    /// Clock frequency tolerance (read-only).
+    pub tolerance: std::ffi::c_longlong,
+    /// Current time (read-only except for `ADJ_SETOFFSET`).
+    ///
+    /// If `STA_NANO` is set, `time.tv_usec` contains nanoseconds;
+    /// otherwise microseconds.
+    pub time: Timeval,
+    /// Microseconds between clock ticks.
+    pub tick: std::ffi::c_longlong,
+    /// PPS (pulse-per-second) frequency (read-only).
+    pub ppsfreq: std::ffi::c_longlong,
+    /// PPS jitter (nanoseconds if `STA_NANO` is set, otherwise microseconds).
+    pub jitter: std::ffi::c_longlong,
+    /// PPS interval duration (seconds, read-only).
+    pub shift: std::ffi::c_longlong,
+    /// PPS stability (read-only).
+    pub stabil: std::ffi::c_longlong,
+    /// Count of PPS jitter limit exceeded events (read-only).
+    pub jitcnt: std::ffi::c_longlong,
+    /// Count of PPS calibration intervals (read-only).
+    pub calcnt: std::ffi::c_longlong,
+    /// Count of PPS calibration errors (read-only).
+    pub errcnt: std::ffi::c_longlong,
+    /// Count of PPS stability limit exceeded events (read-only).
+    pub stbcnt: std::ffi::c_longlong,
+    /// TAI offset, as set by previous `ADJ_TAI` operation
+    /// (seconds, read-only, since Linux 2.6.26).
+    pub tai: std::ffi::c_int,
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -188,6 +350,12 @@ mod tests {
     fn test_time() {
         let time = get_time(ClockId::ClockBoottime).unwrap();
         assert!(time.tv_sec > 0);
+    }
+
+    #[test]
+    fn test_adjust_time() {
+        let mut tx = Timex::default();
+        adjust_time(ClockId::ClockRealtime, &mut tx).unwrap();
     }
 
     #[test]

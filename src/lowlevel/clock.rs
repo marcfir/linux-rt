@@ -2,6 +2,8 @@ use std::ffi::c_int;
 
 use syscalls::{syscall, Errno, Sysno};
 
+use crate::clock::{StatusCodes, Timex, TimexMode};
+
 #[allow(non_camel_case_types)]
 pub type clockid_t = std::ffi::c_int;
 
@@ -23,6 +25,16 @@ pub const CLOCK_SGI_CYCLE: clockid_t = 10;
 pub const CLOCK_TAI: clockid_t = 11;
 
 pub const TIMER_ABSTIME: c_int = 0x01;
+
+/// Time in seconds and microseconds.
+#[repr(C)]
+#[derive(Debug, PartialEq, Clone, Copy, Default)]
+pub struct Timeval {
+    /// Seconds
+    pub tv_sec: std::ffi::c_long,
+    /// Microseconds
+    pub tv_usec: std::ffi::c_long,
+}
 
 /// Time in seconds and nanoseconds.
 /// The time is normalized when [TimeSpec::tv_nsec] is in the range of [0, 999'999'999].
@@ -154,6 +166,139 @@ impl core::ops::Div<i32> for TimeSpec {
     }
 }
 
+///
+#[repr(C)]
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub struct TimexRaw {
+    /// Mode selector for `adjtimex`.
+    pub modes: std::ffi::c_uint,
+
+    _pad: u32,
+
+    /// Time offset; nanoseconds if `STA_NANO` is set, otherwise microseconds.
+    pub offset: std::ffi::c_longlong,
+
+    /// Frequency offset (see `man 2 adjtimex` for units).
+    pub freq: std::ffi::c_longlong,
+
+    /// Maximum error in microseconds.
+    pub maxerror: std::ffi::c_longlong,
+
+    /// Estimated error in microseconds.
+    pub esterror: std::ffi::c_longlong,
+
+    /// Clock command/status flags.
+    pub status: std::ffi::c_int,
+
+    _pad2: u32,
+
+    /// PLL (phase-locked loop) time constant.
+    pub constant: std::ffi::c_longlong,
+
+    /// Clock precision (microseconds, read-only).
+    pub precision: std::ffi::c_longlong,
+
+    /// Clock frequency tolerance (read-only).
+    pub tolerance: std::ffi::c_longlong,
+
+    /// Current time (read-only except for `ADJ_SETOFFSET`).
+    ///
+    /// If `STA_NANO` is set, `time.tv_usec` contains nanoseconds;
+    /// otherwise microseconds.
+    pub time: Timeval,
+
+    /// Microseconds between clock ticks.
+    pub tick: std::ffi::c_longlong,
+
+    /// PPS (pulse-per-second) frequency (read-only).
+    pub ppsfreq: std::ffi::c_longlong,
+
+    /// PPS jitter (nanoseconds if `STA_NANO` is set, otherwise microseconds).
+    pub jitter: std::ffi::c_longlong,
+
+    /// PPS interval duration (seconds, read-only).
+    pub shift: std::ffi::c_longlong,
+
+    _pad3: u32,
+
+    /// PPS stability (read-only).
+    pub stabil: std::ffi::c_longlong,
+
+    /// Count of PPS jitter limit exceeded events (read-only).
+    pub jitcnt: std::ffi::c_longlong,
+
+    /// Count of PPS calibration intervals (read-only).
+    pub calcnt: std::ffi::c_longlong,
+
+    /// Count of PPS calibration errors (read-only).
+    pub errcnt: std::ffi::c_longlong,
+
+    /// Count of PPS stability limit exceeded events (read-only).
+    pub stbcnt: std::ffi::c_longlong,
+
+    /// TAI offset, as set by previous `ADJ_TAI` operation
+    /// (seconds, read-only, since Linux 2.6.26).
+    pub tai: std::ffi::c_int,
+
+    /// Reserved space for future expansion.
+    __reserved: [u32; 11],
+}
+
+impl TimexRaw {
+    pub(crate) fn from_timex(timex: &Timex) -> Self {
+        Self {
+            modes: timex.modes.as_raw(),
+            _pad: 0,
+            offset: timex.offset,
+            freq: timex.freq,
+            maxerror: timex.maxerror,
+            esterror: timex.esterror,
+            status: timex.status.as_raw(),
+            _pad2: 0,
+            constant: timex.constant,
+            precision: timex.precision,
+            tolerance: timex.tolerance,
+            time: timex.time,
+            tick: timex.tick,
+            ppsfreq: timex.ppsfreq,
+            jitter: timex.jitter,
+            shift: timex.shift,
+            _pad3: 0,
+            stabil: timex.stabil,
+            jitcnt: timex.jitcnt,
+            calcnt: timex.calcnt,
+            errcnt: timex.errcnt,
+            stbcnt: timex.stbcnt,
+            tai: timex.tai,
+            __reserved: [0; 11],
+        }
+    }
+    pub(crate) fn into_timex(self) -> Timex {
+        Timex {
+            modes: TimexMode::from_raw(self.modes),
+            offset: self.offset,
+            freq: self.freq,
+            maxerror: self.maxerror,
+            esterror: self.esterror,
+            status: StatusCodes::from_raw(self.status),
+            constant: self.constant,
+            precision: self.precision,
+            tolerance: self.tolerance,
+            time: self.time,
+            tick: self.tick,
+            ppsfreq: self.ppsfreq,
+            jitter: self.jitter,
+            shift: self.shift,
+            stabil: self.stabil,
+            jitcnt: self.jitcnt,
+            calcnt: self.calcnt,
+            errcnt: self.errcnt,
+            stbcnt: self.stbcnt,
+            tai: self.tai,
+        }
+    }
+}
+
 /// Retrieve the time of the specified clock [clockid_t].
 #[allow(clippy::missing_safety_doc)]
 pub unsafe fn clock_gettime(clockid: clockid_t, tp: *mut TimeSpec) -> Result<usize, Errno> {
@@ -176,6 +321,12 @@ pub unsafe fn clock_nanosleep(
     remain: *mut TimeSpec,
 ) -> Result<usize, Errno> {
     syscall!(Sysno::clock_nanosleep, clockid, flags, tp, remain)
+}
+
+#[allow(clippy::missing_safety_doc)]
+/// # Parameter
+pub unsafe fn clock_adjtime(clockid: clockid_t, buf: *mut TimexRaw) -> Result<usize, Errno> {
+    syscall!(Sysno::clock_adjtime, clockid, buf)
 }
 
 #[cfg(test)]
