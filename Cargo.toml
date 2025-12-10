@@ -20,5 +20,5 @@ bitflags = "2.9"
 
 [dev-dependencies]
 libc = { version = "0.2" }
-nix = { version = "0.30", features = ["process", "sched"] }
-serde_repr = ">=0.1.5"                                      # Unused but forced for -Z minimal-versions
+nix = { version = "0.30", features = ["process", "sched", "mman"] }
+serde_repr = ">=0.1.5"                                              # Unused but forced for -Z minimal-versions
