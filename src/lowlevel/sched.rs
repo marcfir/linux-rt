@@ -133,7 +133,7 @@ impl CpuSet {
     }
 
     /// Checks whether the `core` is set in the [CpuSet].
-    pub const fn is_set(&mut self, core: usize) -> bool {
+    pub const fn is_set(&self, core: usize) -> bool {
         let idx = core / Map::BITS as usize;
         let bit = core % Map::BITS as usize;
         self.bits[idx] & (1 << bit) > 0
