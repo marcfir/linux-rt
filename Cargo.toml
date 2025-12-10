@@ -10,13 +10,13 @@ categories = ["os::linux-apisos::linux-apissched"]
 repository = "https://github.com/marcfir/linux-rt"
 
 [dependencies]
-syscalls = { version = "=0.6.18", features = [
+syscalls = { version = "=0.7.0", features = [
     "x86",
     "x86_64",
     "aarch64",
     "riscv64",
 ] }
-bitflags = "2.9"
+bitflags = "2.10"
 
 [dev-dependencies]
 libc = { version = "0.2" }
