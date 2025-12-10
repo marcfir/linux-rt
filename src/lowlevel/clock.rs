@@ -166,7 +166,7 @@ impl core::ops::Div<i32> for TimeSpec {
     }
 }
 
-///
+/// Adjustment parameters for adjtimex()
 #[repr(C)]
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct TimexRaw {
