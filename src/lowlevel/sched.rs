@@ -143,6 +143,11 @@ impl CpuSet {
     pub const fn size_of() -> usize {
         size_of::<Self>()
     }
+
+    /// Return the maximum number of CPU in CpuSet
+    pub const fn count() -> usize {
+        Self::size_of() * 8
+    }
 }
 
 /// Sets the CPU affinity mask of the thread whose
