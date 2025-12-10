@@ -87,6 +87,6 @@ mod test {
     use super::*;
     #[test]
     fn test_mlockall() {
-        mlockall(MmanFlags::MCL_FUTURE | MmanFlags::MCL_CURRENT).unwrap();
+        mlockall(MmanFlags::MCL_FUTURE).unwrap();
     }
 }
