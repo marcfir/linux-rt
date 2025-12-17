@@ -99,6 +99,15 @@ impl CpuSet {
         cpuset
     }
 
+    /// Create a [CpuSet] from a slice of cores
+    pub fn from_slice(slice_of_cores: impl AsRef<[usize]>) -> Self {
+        let mut cpuset = CpuSet::empty();
+        slice_of_cores.as_ref().iter().for_each(|core| {
+            cpuset.set(*core);
+        });
+        cpuset
+    }
+
     /// Create a full [CpuSet]
     pub const fn full() -> Self {
         Self {
@@ -114,22 +123,32 @@ impl CpuSet {
         self
     }
 
-    /// Add CPU `core` to the [CpuSet].
-    pub const fn set(self, core: usize) -> Self {
+    /// Add CPU `core` to the [CpuSet] using the builder pattern.
+    pub const fn insert(self, core: usize) -> Self {
         let mut cs = self;
-        let idx = core / Map::BITS as usize;
-        let bit = core % Map::BITS as usize;
-        cs.bits[idx] |= 1 << bit;
+        cs.set(core);
         cs
     }
 
-    /// Clear CPU `core` to the [CpuSet].
-    pub const fn clear(self, core: usize) -> Self {
-        let mut cs = self;
+    /// Add CPU `core` to the [CpuSet].
+    pub const fn set(&mut self, core: usize) {
         let idx = core / Map::BITS as usize;
         let bit = core % Map::BITS as usize;
-        cs.bits[idx] &= !(1 << bit);
+        self.bits[idx] |= 1 << bit;
+    }
+
+    /// Clear CPU `core` from the [CpuSet] using the builder pattern.
+    pub const fn remove(self, core: usize) -> Self {
+        let mut cs = self;
+        cs.clear(core);
         cs
+    }
+
+    /// Clear CPU `core` from the [CpuSet].
+    pub const fn clear(&mut self, core: usize) {
+        let idx = core / Map::BITS as usize;
+        let bit = core % Map::BITS as usize;
+        self.bits[idx] &= !(1 << bit);
     }
 
     /// Checks whether the `core` is set in the [CpuSet].
@@ -257,7 +276,7 @@ mod test {
             }
         );
 
-        let test = CpuSet::empty().set(1);
+        let test = CpuSet::empty().insert(1);
 
         assert_eq!(
             test,
@@ -267,6 +286,21 @@ mod test {
                 #[cfg(target_pointer_width = "32")]
                 bits: [
                     2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0
+                ],
+            }
+        );
+
+        let test = CpuSet::from_slice([1, 2]);
+
+        assert_eq!(
+            test,
+            CpuSet {
+                #[cfg(not(target_pointer_width = "32"))]
+                bits: [6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                #[cfg(target_pointer_width = "32")]
+                bits: [
+                    6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                     0, 0, 0, 0, 0, 0
                 ],
             }
@@ -284,17 +318,17 @@ mod test {
                 0, 0, 0, 0, 0, 0,
             ],
         }
-        .clear(0);
+        .remove(0);
         assert_eq!(test.bits[0], 0xFFFE);
-        let test = test.clear(7).clear(9).clear(8).clear(4);
+        let test = test.remove(7).remove(9).remove(8).remove(4);
         assert_eq!(test.bits[0], 0xFC6E);
         #[cfg(not(target_pointer_width = "32"))]
-        assert_eq!(CpuSet::empty().set(63).bits[0], 0x8000000000000000);
+        assert_eq!(CpuSet::empty().insert(63).bits[0], 0x8000000000000000);
         #[cfg(target_pointer_width = "32")]
         assert_eq!(CpuSet::empty().set(63).bits[1], 0x80000000);
 
         #[cfg(not(target_pointer_width = "32"))]
-        assert_eq!(CpuSet::empty().set(64).bits[1], 1);
+        assert_eq!(CpuSet::empty().insert(64).bits[1], 1);
         #[cfg(target_pointer_width = "32")]
         assert_eq!(CpuSet::empty().set(64).bits[3], 1);
 

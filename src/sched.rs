@@ -432,7 +432,7 @@ mod tests {
     fn test_affinity() {
         let set = get_affinity(Pid::this()).unwrap();
         set_affinity(Pid::this(), set.clone()).unwrap();
-        let set = set.set(0);
+        let set = set.insert(0);
         set_affinity(Pid::this(), set).unwrap();
     }
 }
