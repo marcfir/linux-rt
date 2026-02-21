@@ -166,6 +166,22 @@ impl core::ops::Div<i32> for TimeSpec {
     }
 }
 
+impl Ord for TimeSpec {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        if self.tv_sec == other.tv_sec {
+            self.tv_nsec.cmp(&other.tv_nsec)
+        } else {
+            self.tv_sec.cmp(&other.tv_sec)
+        }
+    }
+}
+impl Eq for TimeSpec {}
+impl PartialOrd for TimeSpec {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 /// Adjustment parameters for adjtimex()
 #[repr(C)]
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -403,5 +419,13 @@ mod test {
             TimeSpec::seconds(3) / 2,
             TimeSpec::nanoseconds(1_500_000_000)
         );
+        assert!(TimeSpec::nanoseconds(1_500_000_000) == TimeSpec::nanoseconds(1_500_000_000));
+        assert!(TimeSpec::nanoseconds(1_500_000_000) != TimeSpec::nanoseconds(1_500_000_001));
+        assert!(TimeSpec::nanoseconds(1_500_000_000) < TimeSpec::nanoseconds(1_500_000_001));
+        assert!(TimeSpec::nanoseconds(1_500_100_000) > TimeSpec::nanoseconds(1_500_000_001));
+        assert!(TimeSpec::nanoseconds(-1_500_000_000) == TimeSpec::nanoseconds(-1_500_000_000));
+        assert!(TimeSpec::nanoseconds(-1_500_000_000) != TimeSpec::nanoseconds(-1_500_000_001));
+        assert!(TimeSpec::nanoseconds(-1_500_000_000) > TimeSpec::nanoseconds(-1_500_000_001));
+        assert!(TimeSpec::nanoseconds(-1_500_100_000) < TimeSpec::nanoseconds(-1_500_000_001));
     }
 }
