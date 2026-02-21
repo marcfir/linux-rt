@@ -10,7 +10,7 @@ categories = ["os::linux-apisos::linux-apissched"]
 repository = "https://github.com/marcfir/linux-rt"
 
 [dependencies]
-syscalls = { version = "=0.7.0", features = [
+syscalls = { version = "=0.8.1", features = [
     "x86",
     "x86_64",
     "aarch64",
@@ -20,5 +20,5 @@ bitflags = "2.10"
 
 [dev-dependencies]
 libc = { version = "0.2" }
-nix = { version = "0.30", features = ["process", "sched", "mman"] }
+nix = { version = "0.31", features = ["process", "sched", "mman"] }
 serde_repr = ">=0.1.5"                                              # Unused but forced for -Z minimal-versions
