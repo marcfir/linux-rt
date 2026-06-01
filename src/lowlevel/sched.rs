@@ -1,5 +1,4 @@
-use std::ffi::c_int;
-
+use std::{ffi::c_int, fmt::Debug};
 use syscalls::{syscall, Errno, Sysno};
 
 #[allow(non_camel_case_types)]
@@ -69,7 +68,7 @@ type Map = u64;
 
 /// A CPU affinity mask is represented by this structure.
 #[repr(C)]
-#[derive(Debug, PartialEq, Clone)]
+#[derive(PartialEq, Clone)]
 pub struct CpuSet {
     bits: [Map; CPU_SET_SIZE],
 }
@@ -166,6 +165,26 @@ impl CpuSet {
     /// Return the maximum number of CPU in CpuSet
     pub const fn count() -> usize {
         Self::size_of() * 8
+    }
+
+    pub fn used_cores(&self) -> Vec<usize> {
+        let mut cores = Vec::new();
+
+        for core in 0..CPU_SET_SIZE * Map::BITS as usize {
+            if self.is_set(core) {
+                cores.push(core);
+            }
+        }
+
+        cores
+    }
+}
+
+impl Debug for CpuSet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CpuSet")
+            .field("cores", &self.used_cores())
+            .finish()
     }
 }
 
@@ -360,5 +379,36 @@ mod test {
             unsafe { std::mem::transmute::<libc::cpu_set_t, [Map; CPU_SET_SIZE]>(cs_libc) },
             cs.bits
         );
+    }
+
+    #[test]
+    fn test_cpuset_usedcores() {
+        let test = CpuSet {
+            #[cfg(not(target_pointer_width = "32"))]
+            bits: [0x66, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            #[cfg(target_pointer_width = "32")]
+            bits: [
+                0x66, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0,
+            ],
+        };
+        assert_eq!(test.used_cores(), vec![1, 2, 5, 6])
+    }
+
+    #[test]
+    fn test_cpuset_debug() {
+        let cpuset = CpuSet {
+            #[cfg(not(target_pointer_width = "32"))]
+            bits: [0x66, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            #[cfg(target_pointer_width = "32")]
+            bits: [
+                0x66, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0,
+            ],
+        };
+
+        let output = format!("{:?}", cpuset);
+
+        assert_eq!(output, "CpuSet { cores: [1, 2, 5, 6] }");
     }
 }
