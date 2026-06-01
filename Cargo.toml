@@ -16,7 +16,8 @@ syscalls = { version = "=0.8.1", features = [
     "aarch64",
     "riscv64",
 ] }
-bitflags = "2.10"
+bitflags = "2.11"
+
 
 [dev-dependencies]
 libc = { version = "0.2" }
