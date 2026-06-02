@@ -174,7 +174,7 @@ pub fn set_affinity(pid: Pid, set: CpuSet) -> Result<(), std::io::Error> {
 pub fn get_affinity(pid: Pid) -> Result<CpuSet, std::io::Error> {
     #[cfg(target_family = "unix")]
     {
-        crate::linux::sched::get_affinity()
+        crate::linux::sched::get_affinity(pid)
     }
     #[cfg(target_os = "windows")]
     {
@@ -224,7 +224,7 @@ impl Policy {
     }
 
     /// Create a [Policy] from a raw value.
-    pub fn from_raw(raw: u32) -> Result<Policy, Error> {
+    pub fn from_raw(raw: u32) -> Result<Policy, std::io::Error> {
         match raw {
             crate::linux::sched::SCHED_NORMAL => Ok(Policy::Normal),
             crate::linux::sched::SCHED_FIFO => Ok(Policy::Fifo),
@@ -233,7 +233,7 @@ impl Policy {
             crate::linux::sched::SCHED_IDLE => Ok(Policy::Idle),
             crate::linux::sched::SCHED_DEADLINE => Ok(Policy::Deadline),
             crate::linux::sched::SCHED_EXT => Ok(Policy::Ext),
-            _ => Err(Error),
+            _ => Err(std::io::Error::from(std::io::ErrorKind::InvalidInput)),
         }
     }
 }

@@ -1,3 +1,7 @@
+use crate::{
+    linux::error::{ret_into_result, ret_to_result},
+    sched::{Attributes, CpuSet, Pid, Policy, SchedFlags},
+};
 use std::{ffi::c_int, fmt::Debug};
 use syscalls::{syscall, Errno, Sysno};
 
@@ -77,7 +81,7 @@ pub fn get_attr(pid: Pid) -> Result<Attributes, std::io::Error> {
         sched_get_attr(
             pid.as_raw(),
             &mut attr,
-            mem::size_of::<SchedAttr>() as u32,
+            core::mem::size_of::<SchedAttr>() as u32,
             0,
         )
     };
@@ -104,7 +108,7 @@ pub fn get_attr(pid: Pid) -> Result<Attributes, std::io::Error> {
 /// associated attributes for the thread whose ID is specified in pid.
 pub fn set_attr(pid: Pid, attr: Attributes) -> Result<(), std::io::Error> {
     let mut attr = SchedAttr {
-        size: mem::size_of::<SchedAttr>() as u32,
+        size: core::mem::size_of::<SchedAttr>() as u32,
         sched_policy: attr.policy.into_raw(),
         sched_flags: attr.flags.bits() as u64,
         sched_nice: attr.nice,
@@ -119,106 +123,6 @@ pub fn set_attr(pid: Pid, attr: Attributes) -> Result<(), std::io::Error> {
     unsafe { sched_set_attr(pid.as_raw(), &mut attr, 0) }
         .or(Err(std::io::Error::last_os_error()))
         .and(Ok(()))
-}
-
-/// Sets the scheduling policy with a `nice` value to other.
-/// See [Attributes::nice] for more info.
-pub fn set_other(pid: Pid, nice: i32) -> Result<(), std::io::Error> {
-    let att_other = Attributes {
-        policy: Policy::Normal,
-        nice,
-        deadline_ns: 0,
-        period_ns: 0,
-        flags: SchedFlags::empty(),
-        priority: 0,
-        runtime_ns: 0,
-        sched_util_min: 0,
-        sched_util_max: 0,
-    };
-    set_attr(pid, att_other)
-}
-pub fn set_batch(pid: Pid, nice: i32) -> Result<(), std::io::Error> {
-    let att_batch = Attributes {
-        policy: Policy::Batch,
-        nice,
-        deadline_ns: 0,
-        period_ns: 0,
-        flags: SchedFlags::empty(),
-        priority: 0,
-        runtime_ns: 0,
-        sched_util_min: 0,
-        sched_util_max: 0,
-    };
-    set_attr(pid, att_batch)
-}
-pub fn set_idle(pid: Pid) -> Result<(), std::io::Error> {
-    let att_batch = Attributes {
-        policy: Policy::Idle,
-        nice: 0,
-        deadline_ns: 0,
-        period_ns: 0,
-        flags: SchedFlags::empty(),
-        priority: 0,
-        runtime_ns: 0,
-        sched_util_min: 0,
-        sched_util_max: 0,
-    };
-    set_attr(pid, att_batch)
-}
-pub fn set_fifo(pid: Pid, priority: u32) -> Result<(), std::io::Error> {
-    let att_batch = Attributes {
-        policy: Policy::Fifo,
-        nice: 0,
-        deadline_ns: 0,
-        period_ns: 0,
-        flags: SchedFlags::empty(),
-        priority,
-        runtime_ns: 0,
-        sched_util_min: 0,
-        sched_util_max: 0,
-    };
-    set_attr(pid, att_batch)
-}
-pub fn set_rr(pid: Pid, priority: u32) -> Result<(), std::io::Error> {
-    let att_batch = Attributes {
-        policy: Policy::RoundRobin,
-        nice: 0,
-        deadline_ns: 0,
-        period_ns: 0,
-        flags: SchedFlags::empty(),
-        priority,
-        runtime_ns: 0,
-        sched_util_min: 0,
-        sched_util_max: 0,
-    };
-    set_attr(pid, att_batch)
-}
-pub fn set_deadline(
-    pid: Pid,
-    deadline_ns: u64,
-    period_ns: u64,
-    runtime_ns: u64,
-) -> Result<(), std::io::Error> {
-    if !((runtime_ns <= deadline_ns) && (deadline_ns <= period_ns)) {
-        println!("Error: params are not sched_runtime <= sched_deadline <= sched_period!");
-        return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
-    };
-    if runtime_ns < 1024 || deadline_ns < 1024 || period_ns < 1024 {
-        println!("Error: params are y1024");
-        return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
-    }
-    let att_batch = Attributes {
-        policy: Policy::Deadline,
-        nice: 0,
-        deadline_ns,
-        period_ns,
-        flags: SchedFlags::empty(),
-        priority: 0,
-        runtime_ns,
-        sched_util_min: 0,
-        sched_util_max: 0,
-    };
-    set_attr(pid, att_batch)
 }
 
 pub fn get_priority_max(pol: Policy) -> Result<isize, std::io::Error> {
