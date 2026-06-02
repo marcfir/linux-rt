@@ -4,12 +4,17 @@
 /// single process.
 #[derive(Debug, Clone, Copy)]
 pub enum ClockId {
+    /// # Unix
     /// A settable system-wide clock that measures real (i.e., wall-
     /// clock) time.  Setting this clock requires appropriate privi‐
     /// leges.  This clock is affected by discontinuous jumps in the
     /// system time (e.g., if the system administrator manually
     /// changes the clock), and by the incremental adjustments per‐
     /// formed by adjtime(3) and NTP.
+    /// # Windows
+    /// The GetSystemTimePreciseAsFileTime function retrieves the current
+    /// system date and time with the highest possible level of precision (<1us).
+    /// The retrieved information is in Coordinated Universal Time (UTC) format.
     ClockRealtime,
 
     /// (since Linux 3.10; Linux-specific)
@@ -37,11 +42,13 @@ pub enum ClockId {
     /// increased) time values.
     ClockMonotonic,
 }
+#[cfg(target_os = "linux")]
 impl ClockId {
     /// Get the raw `clockid_t`.
     pub const fn as_raw(&self) -> libc::clockid_t {
         match self {
             ClockId::ClockRealtime => libc::CLOCK_REALTIME,
+
             ClockId::ClockTai => libc::CLOCK_TAI,
             ClockId::ClockMonotonic => libc::CLOCK_MONOTONIC,
         }
@@ -50,6 +57,7 @@ impl ClockId {
     pub const fn from_raw(clockid: libc::clockid_t) -> Option<Self> {
         match clockid {
             libc::CLOCK_REALTIME => Some(ClockId::ClockRealtime),
+            #[cfg(target_os = "linux")]
             libc::CLOCK_TAI => Some(ClockId::ClockTai),
             libc::CLOCK_MONOTONIC => Some(ClockId::ClockMonotonic),
             _ => None,
@@ -57,7 +65,8 @@ impl ClockId {
     }
 }
 
-// Time in seconds and nanoseconds.
+#[cfg(target_family = "unix")]
+/// Time in seconds and nanoseconds.
 /// The time is normalized when [TimeSpec::tv_nsec] is in the range of [0, 999'999'999].
 #[repr(C)]
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -74,8 +83,20 @@ pub struct TimeSpec {
     pub tv_nsec: std::ffi::c_long,
 }
 
+#[cfg(target_family = "windows")]
+/// Time in seconds and nanoseconds.
+/// The time is normalized when [TimeSpec::tv_nsec] is in the range of [0, 999'999'999].
+#[repr(C)]
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub struct TimeSpec {
+    /// Seconds
+    pub tv_sec: i64,
+    /// Nanoseconds [0, 999'999'999]
+    pub tv_nsec: i64,
+}
+
 impl TimeSpec {
-    /// Returns a zero-initialized `TimeSpec`.
+    /// Returns a zero-initialized [TimeSpec].
     #[inline]
     pub const fn zeroed() -> Self {
         Self {
@@ -83,7 +104,7 @@ impl TimeSpec {
             tv_nsec: 0,
         }
     }
-
+    /// Creates a new [TimeSpec] from the specified number of whole seconds.
     #[inline]
     pub const fn seconds(seconds: i64) -> TimeSpec {
         TimeSpec {
@@ -91,42 +112,62 @@ impl TimeSpec {
             tv_nsec: 0,
         }
     }
+
+    /// Creates a new [TimeSpec] from the specified number of milliseconds.
     #[inline]
-    pub const fn milliseconds(microseconds: i64) -> Self {
-        let (sec, nsec) = (microseconds / 1_000, microseconds % 1_000);
+    pub const fn milliseconds(milliseconds: i64) -> Self {
+        let sec = milliseconds.div_euclid(1_000);
+        let nsec = milliseconds.rem_euclid(1_000) * 1_000_000;
+
         Self {
             tv_sec: sec,
             tv_nsec: nsec,
         }
     }
+
+    /// Creates a new [TimeSpec] from the specified number of microseconds.
     #[inline]
     pub const fn microseconds(microseconds: i64) -> Self {
-        let (sec, nsec) = (microseconds / 1_000_000, microseconds % 1_000_000);
+        let sec = microseconds.div_euclid(1_000_000);
+        let nsec = microseconds.rem_euclid(1_000_000) * 1_000;
+
         Self {
             tv_sec: sec,
             tv_nsec: nsec,
         }
     }
+
+    /// Creates a new [TimeSpec] from the specified number of nanoseconds.
     #[inline]
     pub const fn nanoseconds(nanoseconds: i64) -> Self {
-        let (sec, nsec) = (nanoseconds / 1_000_000_000, nanoseconds % 1_000_000_000);
+        let sec = nanoseconds.div_euclid(1_000_000_000);
+        let nsec = nanoseconds.rem_euclid(1_000_000_000);
+
         Self {
             tv_sec: sec,
             tv_nsec: nsec,
         }
     }
+
+    /// Returns the total number of nanoseconds contained by this [TimeSpec].
     #[inline]
     pub const fn as_nanoseconds(&self) -> i64 {
         self.tv_sec * 1_000_000_000 + self.tv_nsec
     }
+
+    /// Returns the total number of nanoseconds contained by this [TimeSpec].
     #[inline]
     pub const fn as_nanoseconds_i128(&self) -> i128 {
         self.tv_sec as i128 * 1_000_000_000 + self.tv_nsec as i128
     }
+
+    /// Returns the total number of whole microseconds contained by this [TimeSpec].
     #[inline]
     pub const fn as_microseconds(&self) -> i64 {
         self.tv_sec * 1_000_000 + self.tv_nsec / 1_000
     }
+
+    /// Returns the total number of whole milliseconds contained by this [TimeSpec].
     #[inline]
     pub const fn as_milliseconds(&self) -> i64 {
         self.tv_sec * 1_000 + self.tv_nsec / 1_000_000
@@ -204,13 +245,29 @@ impl PartialOrd for TimeSpec {
 /// Retrieve the time of the specified clock [ClockId].
 pub fn get_time(clockid: ClockId) -> Result<TimeSpec, std::io::Error> {
     #[cfg(target_os = "linux")]
-    crate::linux::clock::get_time(clockid)
+    {
+        crate::linux::clock::get_time(clockid)
+    }
+    #[cfg(target_os = "windows")]
+    {
+        crate::windows::clock::get_time(clockid)
+    }
 }
 
 /// Set the time `tp` of the specified clock [ClockId].
 pub fn set_time(clockid: ClockId, ts: TimeSpec) -> Result<(), std::io::Error> {
     #[cfg(target_os = "linux")]
-    crate::linux::clock::set_time(clockid, ts)
+    {
+        crate::linux::clock::set_time(clockid, ts)
+    }
+    #[cfg(target_os = "windows")]
+    {
+        todo!(
+            "set_time not implemented on windows! {:?},{:?}",
+            clockid,
+            ts
+        )
+    }
 }
 
 /// The [nanosleep_relative] function shall cause the current thread to be
@@ -221,7 +278,13 @@ pub fn set_time(clockid: ClockId, ts: TimeSpec) -> Result<(), std::io::Error> {
 /// the time shall be the clock specified by [ClockId].
 pub fn nanosleep_relative(clockid: ClockId, ts: TimeSpec) -> Result<(), std::io::Error> {
     #[cfg(target_os = "linux")]
-    crate::linux::clock::nanosleep_relative(clockid, ts)
+    {
+        crate::linux::clock::nanosleep_relative(clockid, ts)
+    }
+    #[cfg(target_os = "windows")]
+    {
+        crate::windows::clock::nanosleep_relative(clockid, ts)
+    }
 }
 /// The [nanosleep_absolute] function shall cause the current thread to be
 /// suspended from execution until either the time value of the clock
@@ -234,7 +297,14 @@ pub fn nanosleep_relative(clockid: ClockId, ts: TimeSpec) -> Result<(), std::io:
 /// and the calling process shall not be suspended.
 pub fn nanosleep_absolute(clockid: ClockId, ts: TimeSpec) -> Result<(), std::io::Error> {
     #[cfg(target_os = "linux")]
-    crate::linux::clock::nanosleep_absolute(clockid, ts)
+    {
+        crate::linux::clock::nanosleep_absolute(clockid, ts)
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        crate::windows::clock::nanosleep_absolute(clockid, ts)
+    }
 }
 
 /// Like [nanosleep_relative] but returns the amount of time remaining in the
@@ -244,7 +314,13 @@ pub fn nanosleep_relative_with_remain(
     ts: TimeSpec,
 ) -> Result<TimeSpec, std::io::Error> {
     #[cfg(target_os = "linux")]
-    crate::linux::clock::nanosleep_relative_with_remain(clockid, ts)
+    {
+        crate::linux::clock::nanosleep_relative_with_remain(clockid, ts)
+    }
+    #[cfg(target_os = "windows")]
+    {
+        crate::windows::clock::nanosleep_relative_with_remain(clockid, ts)
+    }
 }
 /// Like [nanosleep_absolute] but returns the amount of time remaining in the
 /// interval (the requested time minus the time actually slept)
@@ -253,7 +329,13 @@ pub fn nanosleep_absolute_with_remain(
     ts: TimeSpec,
 ) -> Result<TimeSpec, std::io::Error> {
     #[cfg(target_os = "linux")]
-    crate::linux::clock::nanosleep_absolute_with_remain(clockid, ts)
+    {
+        crate::linux::clock::nanosleep_absolute_with_remain(clockid, ts)
+    }
+    #[cfg(target_os = "windows")]
+    {
+        crate::windows::clock::nanosleep_absolute_with_remain(clockid, ts)
+    }
 }
 
 #[cfg(test)]
@@ -330,8 +412,249 @@ mod tests {
         assert_eq!(
             TimeSpec::nanoseconds(-1_999_999_999),
             TimeSpec {
+                tv_sec: -2,
+                tv_nsec: 1
+            }
+        );
+    }
+
+    #[test]
+    fn test_timespec_construct() {
+        // nanoseconds
+
+        assert_eq!(
+            TimeSpec::nanoseconds(0),
+            TimeSpec {
+                tv_sec: 0,
+                tv_nsec: 0
+            }
+        );
+        assert_eq!(
+            TimeSpec::nanoseconds(22),
+            TimeSpec {
+                tv_sec: 0,
+                tv_nsec: 22
+            }
+        );
+        assert_eq!(
+            TimeSpec::nanoseconds(1),
+            TimeSpec {
+                tv_sec: 0,
+                tv_nsec: 1
+            }
+        );
+
+        assert_eq!(
+            TimeSpec::nanoseconds(999_999_999),
+            TimeSpec {
+                tv_sec: 0,
+                tv_nsec: 999_999_999
+            }
+        );
+
+        assert_eq!(
+            TimeSpec::nanoseconds(1_000_000_000),
+            TimeSpec {
+                tv_sec: 1,
+                tv_nsec: 0
+            }
+        );
+
+        assert_eq!(
+            TimeSpec::nanoseconds(1_500_000_000),
+            TimeSpec {
+                tv_sec: 1,
+                tv_nsec: 500_000_000
+            }
+        );
+
+        assert_eq!(
+            TimeSpec::nanoseconds(-1),
+            TimeSpec {
                 tv_sec: -1,
-                tv_nsec: -999_999_999
+                tv_nsec: 999_999_999
+            }
+        );
+
+        assert_eq!(
+            TimeSpec::nanoseconds(-1_500_000_000),
+            TimeSpec {
+                tv_sec: -2,
+                tv_nsec: 500_000_000
+            }
+        );
+
+        // microseconds
+
+        assert_eq!(
+            TimeSpec::microseconds(22),
+            TimeSpec {
+                tv_sec: 0,
+                tv_nsec: 22_000
+            }
+        );
+
+        assert_eq!(
+            TimeSpec::microseconds(0),
+            TimeSpec {
+                tv_sec: 0,
+                tv_nsec: 0
+            }
+        );
+
+        assert_eq!(
+            TimeSpec::microseconds(1),
+            TimeSpec {
+                tv_sec: 0,
+                tv_nsec: 1_000
+            }
+        );
+
+        assert_eq!(
+            TimeSpec::microseconds(999_999),
+            TimeSpec {
+                tv_sec: 0,
+                tv_nsec: 999_999_000
+            }
+        );
+
+        assert_eq!(
+            TimeSpec::microseconds(1_000_000),
+            TimeSpec {
+                tv_sec: 1,
+                tv_nsec: 0
+            }
+        );
+
+        assert_eq!(
+            TimeSpec::microseconds(1_500_000),
+            TimeSpec {
+                tv_sec: 1,
+                tv_nsec: 500_000_000
+            }
+        );
+
+        assert_eq!(
+            TimeSpec::microseconds(-1),
+            TimeSpec {
+                tv_sec: -1,
+                tv_nsec: 999_999_000
+            }
+        );
+
+        // milliseconds
+
+        assert_eq!(
+            TimeSpec::milliseconds(22),
+            TimeSpec {
+                tv_sec: 0,
+                tv_nsec: 22_000_000
+            }
+        );
+
+        assert_eq!(
+            TimeSpec::milliseconds(-500),
+            TimeSpec {
+                tv_sec: -1,
+                tv_nsec: 500_000_000
+            }
+        );
+
+        assert_eq!(
+            TimeSpec::milliseconds(0),
+            TimeSpec {
+                tv_sec: 0,
+                tv_nsec: 0
+            }
+        );
+
+        assert_eq!(
+            TimeSpec::milliseconds(1),
+            TimeSpec {
+                tv_sec: 0,
+                tv_nsec: 1_000_000
+            }
+        );
+
+        assert_eq!(
+            TimeSpec::milliseconds(999),
+            TimeSpec {
+                tv_sec: 0,
+                tv_nsec: 999_000_000
+            }
+        );
+
+        assert_eq!(
+            TimeSpec::milliseconds(1_000),
+            TimeSpec {
+                tv_sec: 1,
+                tv_nsec: 0
+            }
+        );
+
+        assert_eq!(
+            TimeSpec::milliseconds(1_500),
+            TimeSpec {
+                tv_sec: 1,
+                tv_nsec: 500_000_000
+            }
+        );
+
+        assert_eq!(
+            TimeSpec::milliseconds(-1),
+            TimeSpec {
+                tv_sec: -1,
+                tv_nsec: 999_000_000
+            }
+        );
+
+        assert_eq!(
+            TimeSpec::milliseconds(-1_500),
+            TimeSpec {
+                tv_sec: -2,
+                tv_nsec: 500_000_000
+            }
+        );
+
+        // seconds
+
+        assert_eq!(
+            TimeSpec::seconds(0),
+            TimeSpec {
+                tv_sec: 0,
+                tv_nsec: 0
+            }
+        );
+
+        assert_eq!(
+            TimeSpec::seconds(1),
+            TimeSpec {
+                tv_sec: 1,
+                tv_nsec: 0
+            }
+        );
+
+        assert_eq!(
+            TimeSpec::seconds(123),
+            TimeSpec {
+                tv_sec: 123,
+                tv_nsec: 0
+            }
+        );
+
+        assert_eq!(
+            TimeSpec::seconds(-1),
+            TimeSpec {
+                tv_sec: -1,
+                tv_nsec: 0
+            }
+        );
+
+        assert_eq!(
+            TimeSpec::seconds(-123),
+            TimeSpec {
+                tv_sec: -123,
+                tv_nsec: 0
             }
         );
     }

@@ -57,6 +57,208 @@ pub unsafe fn sched_get_attr(
     syscall!(Sysno::sched_getattr, pid, attr, size, flags)
 }
 
+/// The [get_attr()] function wraps the `sched_getattr()` system call and fetches the scheduling policy and
+/// the associated attributes for the thread whose ID is specified in pid.
+pub fn get_attr(pid: Pid) -> Result<Attributes, std::io::Error> {
+    let mut attr = SchedAttr {
+        size: 0,
+        sched_policy: 0,
+        sched_flags: 0,
+        sched_nice: 0,
+        sched_priority: 0,
+        sched_runtime: 0,
+        sched_deadline: 0,
+        sched_period: 0,
+        sched_util_min: 0,
+        sched_util_max: 0,
+    };
+
+    let ret = unsafe {
+        sched_get_attr(
+            pid.as_raw(),
+            &mut attr,
+            mem::size_of::<SchedAttr>() as u32,
+            0,
+        )
+    };
+    match ret {
+        Ok(_) => {
+            let a = Attributes {
+                policy: Policy::from_raw(attr.sched_policy).unwrap(),
+                flags: SchedFlags::from_bits_truncate(attr.sched_flags as i16),
+                nice: attr.sched_nice,
+                priority: attr.sched_priority,
+                deadline_ns: attr.sched_deadline,
+                period_ns: attr.sched_period,
+                runtime_ns: attr.sched_runtime,
+                sched_util_min: attr.sched_util_min,
+                sched_util_max: attr.sched_util_max,
+            };
+            Ok(a)
+        }
+        Err(_) => Err(std::io::Error::last_os_error()),
+    }
+}
+
+/// The [set_attr()] function wraps the `sched_setattr()` system call and sets the scheduling policy and
+/// associated attributes for the thread whose ID is specified in pid.
+pub fn set_attr(pid: Pid, attr: Attributes) -> Result<(), std::io::Error> {
+    let mut attr = SchedAttr {
+        size: mem::size_of::<SchedAttr>() as u32,
+        sched_policy: attr.policy.into_raw(),
+        sched_flags: attr.flags.bits() as u64,
+        sched_nice: attr.nice,
+        sched_priority: attr.priority,
+        sched_runtime: attr.runtime_ns,
+        sched_deadline: attr.deadline_ns,
+        sched_period: attr.period_ns,
+        sched_util_min: attr.sched_util_min,
+        sched_util_max: attr.sched_util_max,
+    };
+
+    unsafe { sched_set_attr(pid.as_raw(), &mut attr, 0) }
+        .or(Err(std::io::Error::last_os_error()))
+        .and(Ok(()))
+}
+
+/// Sets the scheduling policy with a `nice` value to other.
+/// See [Attributes::nice] for more info.
+pub fn set_other(pid: Pid, nice: i32) -> Result<(), std::io::Error> {
+    let att_other = Attributes {
+        policy: Policy::Normal,
+        nice,
+        deadline_ns: 0,
+        period_ns: 0,
+        flags: SchedFlags::empty(),
+        priority: 0,
+        runtime_ns: 0,
+        sched_util_min: 0,
+        sched_util_max: 0,
+    };
+    set_attr(pid, att_other)
+}
+pub fn set_batch(pid: Pid, nice: i32) -> Result<(), std::io::Error> {
+    let att_batch = Attributes {
+        policy: Policy::Batch,
+        nice,
+        deadline_ns: 0,
+        period_ns: 0,
+        flags: SchedFlags::empty(),
+        priority: 0,
+        runtime_ns: 0,
+        sched_util_min: 0,
+        sched_util_max: 0,
+    };
+    set_attr(pid, att_batch)
+}
+pub fn set_idle(pid: Pid) -> Result<(), std::io::Error> {
+    let att_batch = Attributes {
+        policy: Policy::Idle,
+        nice: 0,
+        deadline_ns: 0,
+        period_ns: 0,
+        flags: SchedFlags::empty(),
+        priority: 0,
+        runtime_ns: 0,
+        sched_util_min: 0,
+        sched_util_max: 0,
+    };
+    set_attr(pid, att_batch)
+}
+pub fn set_fifo(pid: Pid, priority: u32) -> Result<(), std::io::Error> {
+    let att_batch = Attributes {
+        policy: Policy::Fifo,
+        nice: 0,
+        deadline_ns: 0,
+        period_ns: 0,
+        flags: SchedFlags::empty(),
+        priority,
+        runtime_ns: 0,
+        sched_util_min: 0,
+        sched_util_max: 0,
+    };
+    set_attr(pid, att_batch)
+}
+pub fn set_rr(pid: Pid, priority: u32) -> Result<(), std::io::Error> {
+    let att_batch = Attributes {
+        policy: Policy::RoundRobin,
+        nice: 0,
+        deadline_ns: 0,
+        period_ns: 0,
+        flags: SchedFlags::empty(),
+        priority,
+        runtime_ns: 0,
+        sched_util_min: 0,
+        sched_util_max: 0,
+    };
+    set_attr(pid, att_batch)
+}
+pub fn set_deadline(
+    pid: Pid,
+    deadline_ns: u64,
+    period_ns: u64,
+    runtime_ns: u64,
+) -> Result<(), std::io::Error> {
+    if !((runtime_ns <= deadline_ns) && (deadline_ns <= period_ns)) {
+        println!("Error: params are not sched_runtime <= sched_deadline <= sched_period!");
+        return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
+    };
+    if runtime_ns < 1024 || deadline_ns < 1024 || period_ns < 1024 {
+        println!("Error: params are y1024");
+        return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
+    }
+    let att_batch = Attributes {
+        policy: Policy::Deadline,
+        nice: 0,
+        deadline_ns,
+        period_ns,
+        flags: SchedFlags::empty(),
+        priority: 0,
+        runtime_ns,
+        sched_util_min: 0,
+        sched_util_max: 0,
+    };
+    set_attr(pid, att_batch)
+}
+
+pub fn get_priority_max(pol: Policy) -> Result<isize, std::io::Error> {
+    let ret = unsafe { libc::sched_get_priority_max(pol.into_raw() as c_int) };
+    ret_into_result(ret).map(|val| val as isize)
+}
+
+pub fn get_priority_min(pol: Policy) -> Result<isize, std::io::Error> {
+    let ret = unsafe { libc::sched_get_priority_min(pol.into_raw() as c_int) };
+    ret_into_result(ret).map(|val| val as isize)
+}
+
+pub fn sched_yield() -> Result<(), std::io::Error> {
+    let ret = unsafe { libc::sched_yield() };
+    ret_to_result(ret, ())
+}
+
+pub fn set_affinity(pid: Pid, set: CpuSet) -> Result<(), std::io::Error> {
+    let ret = unsafe {
+        libc::sched_setaffinity(
+            pid.as_raw(),
+            CpuSet::size_of(),
+            set.as_raw() as *const libc::cpu_set_t,
+        )
+    };
+    ret_to_result(ret, ())
+}
+
+pub fn get_affinity(pid: Pid) -> Result<CpuSet, std::io::Error> {
+    let mut cpuset = CpuSet::empty();
+    let ret = unsafe {
+        libc::sched_getaffinity(
+            pid.as_raw(),
+            CpuSet::size_of(),
+            cpuset.as_mut_raw() as *mut libc::cpu_set_t,
+        )
+    };
+    ret_to_result(ret, cpuset)
+}
+
 #[cfg(test)]
 mod test {
 

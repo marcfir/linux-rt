@@ -1,6 +1,5 @@
-use std::ffi::{c_uint, c_void};
-
 use crate::mman::MmanFlags;
+use std::ffi::{c_uint, c_void};
 
 pub unsafe fn mlock(addr: *const c_void, len: usize) -> Result<(), std::io::Error> {
     let ret = libc::mlock(addr, len);

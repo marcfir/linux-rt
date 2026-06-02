@@ -1,70 +1,39 @@
+use std::time::Duration;
+
+use crate::clock::{ClockId, TimeSpec};
+
 pub fn get_time(clockid: ClockId) -> Result<TimeSpec, std::io::Error> {
-    let mut tp = TimeSpec::zeroed();
-    let ret = unsafe { libc::clock_gettime(clockid.as_raw(), &raw mut tp as *mut libc::timespec) };
-    ret_to_result(ret, tp)
+    match clockid {
+        ClockId::ClockRealtime => clock_gettime_realtime(),
+        ClockId::ClockMonotonic => clock_gettime_monotonic(),
+    }
 }
 
-pub fn set_time(clockid: ClockId, ts: TimeSpec) -> Result<(), std::io::Error> {
-    let ret =
-        unsafe { libc::clock_settime(clockid.as_raw(), &raw const ts as *const libc::timespec) };
-    ret_to_result(ret, ())
-}
-
-pub fn nanosleep_relative(clockid: ClockId, ts: TimeSpec) -> Result<(), std::io::Error> {
-    let ret = unsafe {
-        libc::clock_nanosleep(
-            clockid.as_raw(),
-            0,
-            &raw const ts as *const libc::timespec,
-            core::ptr::null_mut(),
-        )
-    };
-    ret_to_result(ret, ())
+pub fn nanosleep_relative(_clockid: ClockId, ts: TimeSpec) -> Result<(), std::io::Error> {
+    std::thread::sleep(Duration::from_nanos(ts.as_nanoseconds() as u64));
+    Ok(())
 }
 pub fn nanosleep_absolute(clockid: ClockId, ts: TimeSpec) -> Result<(), std::io::Error> {
-    let ret = unsafe {
-        libc::clock_nanosleep(
-            clockid.as_raw(),
-            libc::TIMER_ABSTIME,
-            &raw const ts as *const libc::timespec,
-            core::ptr::null_mut(),
-        )
-    };
-    ret_to_result(ret, ())
+    match clockid {
+        ClockId::ClockRealtime => sleep_absolute_realtime(ts),
+        ClockId::ClockMonotonic => sleep_absolute_monotonic(ts),
+    }
 }
 pub fn nanosleep_relative_with_remain(
     clockid: ClockId,
     ts: TimeSpec,
 ) -> Result<TimeSpec, std::io::Error> {
-    let mut remaining = TimeSpec::new();
-    let ret = unsafe {
-        libc::clock_nanosleep(
-            clockid.as_raw(),
-            0,
-            &raw const ts as *const libc::timespec,
-            &raw mut remaining as *mut libc::timespec,
-        )
-    };
-    ret_to_result(ret, remaining)
+    nanosleep_relative(clockid, ts).and(Ok(TimeSpec::zeroed()))
 }
 pub fn nanosleep_absolute_with_remain(
     clockid: ClockId,
     ts: TimeSpec,
 ) -> Result<TimeSpec, std::io::Error> {
-    let mut remaining = TimeSpec::new();
-    let ret = unsafe {
-        libc::clock_nanosleep(
-            clockid.as_raw(),
-            libc::TIMER_ABSTIME,
-            &raw const ts as *const libc::timespec,
-            &raw mut remaining as *mut libc::timespec,
-        )
-    };
-    ret_to_result(ret, remaining)
+    nanosleep_absolute(clockid, ts).and(Ok(TimeSpec::zeroed()))
 }
 
 #[inline]
-pub fn clock_gettime_monotonic() -> Result<TimeSpec, Errno> {
+pub fn clock_gettime_monotonic() -> Result<TimeSpec, std::io::Error> {
     let mut freq = 0;
     (unsafe { windows::Win32::System::Performance::QueryPerformanceFrequency(&raw mut freq) })?;
 
@@ -87,7 +56,7 @@ pub fn clock_gettime_monotonic() -> Result<TimeSpec, Errno> {
 }
 
 #[inline]
-pub fn clock_gettime_realtime() -> Result<TimeSpec, Errno> {
+pub fn clock_gettime_realtime() -> Result<TimeSpec, std::io::Error> {
     let ft = unsafe { windows::Win32::System::SystemInformation::GetSystemTimePreciseAsFileTime() };
 
     // FILETIME = 100-nanosecond intervals since Jan 1, 1601 (UTC)
@@ -106,7 +75,7 @@ pub fn clock_gettime_realtime() -> Result<TimeSpec, Errno> {
 }
 
 #[inline]
-pub fn sleep_absolute_realtime(ts: TimeSpec) -> Result<(), Errno> {
+pub fn sleep_absolute_realtime(ts: TimeSpec) -> Result<(), std::io::Error> {
     let now = clock_gettime_realtime()?;
     let relative_sleep = (ts - now).as_nanoseconds().max(0) as u64;
     std::thread::sleep(Duration::from_nanos(relative_sleep));
@@ -114,10 +83,11 @@ pub fn sleep_absolute_realtime(ts: TimeSpec) -> Result<(), Errno> {
 }
 
 #[inline]
-pub fn sleep_absolute_monotonic(ts: TimeSpec) -> Result<(), Errno> {
+pub fn sleep_absolute_monotonic(ts: TimeSpec) -> Result<(), std::io::Error> {
     let now = clock_gettime_monotonic()?;
+    println!("{now:?} {ts:?}");
     let relative_sleep = (ts - now).as_nanoseconds().max(0) as u64;
-    println!("{relative_sleep} {now:?} {ts:?}");
+    println!("{relative_sleep}");
     std::thread::sleep(Duration::from_nanos(relative_sleep));
     Ok(())
 }
@@ -147,10 +117,15 @@ mod tests {
     #[test]
     fn test_sleep_absolute() {
         let start = clock_gettime_monotonic().unwrap();
+        let target = start + TimeSpec::milliseconds(20);
 
         sleep_absolute_monotonic(start + TimeSpec::milliseconds(20)).unwrap();
         let end = clock_gettime_monotonic().unwrap();
         let elapsed = (end - start).as_microseconds();
+        println!(
+            "20ms={:?} {start:?} {target:?} {elapsed}",
+            TimeSpec::milliseconds(20)
+        );
         let to_sleep = start + TimeSpec::milliseconds(20);
         println!(
             "{start:?} -> {to_sleep:?}  {}",
