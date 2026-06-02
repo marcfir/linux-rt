@@ -1,6 +1,6 @@
 [package]
-name = "linux-rt"
-version = "0.4.1"
+name = "rt_tunex"
+version = "0.5.0"
 edition = "2021"
 authors = ["Marc Fischer <marcfir@proton.me>"]
 license = "MIT OR Apache-2.0"

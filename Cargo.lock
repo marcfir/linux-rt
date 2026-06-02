@@ -4,9 +4,9 @@ version = 4
 
 [[package]]
 name = "bitflags"
-version = "2.11.1"
+version = "2.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4512299f36f043ab09a583e57bceb5a5aab7a73db1805848e8fef3c9e8c78b3"
+checksum = "84d7ced0ae9557296835c32bf1b1e02b44c746701f898460fb000d7eaa84f00a"
 
 [[package]]
 name = "cfg-if"
@@ -25,18 +25,6 @@ name = "libc"
 version = "0.2.186"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68ab91017fe16c622486840e4c83c9a37afeff978bd239b5293d61ece587de66"
-
-[[package]]
-name = "linux-rt"
-version = "0.4.1"
-dependencies = [
- "bitflags",
- "libc",
- "nix",
- "serde_repr",
- "syscalls",
- "windows",
-]
 
 [[package]]
 name = "nix"
@@ -66,6 +54,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "41f2619966050689382d2b44f664f4bc593e129785a36d6ee376ddf37259b924"
 dependencies = [
  "proc-macro2",
+]
+
+[[package]]
+name = "rt_tunex"
+version = "0.5.0"
+dependencies = [
+ "bitflags",
+ "libc",
+ "nix",
+ "serde_repr",
+ "syscalls",
+ "windows",
 ]
 
 [[package]]
