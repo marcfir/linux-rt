@@ -1,11 +1,16 @@
-use crate::lowlevel::sched::{
-    self, pid_t, sched_get_affinity, sched_get_attr, sched_set_affinity, sched_set_attr, CpuSet,
-    SchedAttr, SCHED_BATCH, SCHED_DEADLINE, SCHED_EXT, SCHED_FIFO, SCHED_IDLE, SCHED_NORMAL,
-    SCHED_RR,
+use crate::linux::{
+    error::{ret_into_result, ret_to_result},
+    sched::{
+        sched_get_attr, sched_set_attr, SchedAttr, SCHED_BATCH, SCHED_DEADLINE, SCHED_EXT,
+        SCHED_FIFO, SCHED_IDLE, SCHED_NORMAL, SCHED_RR,
+    },
 };
 use bitflags::bitflags;
-use std::{ffi::c_int, fmt::Error, mem};
-use syscalls::Errno;
+use std::{
+    ffi::c_int,
+    fmt::{Debug, Error},
+    mem,
+};
 
 /// Currently, Linux supports the scheduling policies defined in this enum.
 #[derive(Debug, Clone, PartialEq)]
@@ -154,14 +159,14 @@ pub struct Attributes {
 /// Process identifier.
 /// Newtype arround `pid_t`
 #[derive(Debug, PartialEq, Clone, Copy)]
-pub struct Pid(pid_t);
+pub struct Pid(libc::pid_t);
 impl Pid {
     /// Gets a raw `pid_t` from a [Pid]
-    pub fn as_raw(&self) -> pid_t {
+    pub fn as_raw(&self) -> libc::pid_t {
         self.0
     }
     /// Creates a [Pid] from a raw `pid_t`
-    pub fn from_raw(raw: pid_t) -> Self {
+    pub fn from_raw(raw: libc::pid_t) -> Self {
         Self(raw)
     }
     /// Returns the [Pid] of the calling process/thread
@@ -172,7 +177,7 @@ impl Pid {
 
 /// The [get_attr()] function wraps the `sched_getattr()` system call and fetches the scheduling policy and
 /// the associated attributes for the thread whose ID is specified in pid.
-pub fn get_attr(pid: Pid) -> Result<Attributes, Errno> {
+pub fn get_attr(pid: Pid) -> Result<Attributes, std::io::Error> {
     let mut attr = SchedAttr {
         size: 0,
         sched_policy: 0,
@@ -209,13 +214,13 @@ pub fn get_attr(pid: Pid) -> Result<Attributes, Errno> {
             };
             Ok(a)
         }
-        Err(err) => Err(err),
+        Err(_) => Err(std::io::Error::last_os_error()),
     }
 }
 
 /// The [set_attr()] function wraps the `sched_setattr()` system call and sets the scheduling policy and
 /// associated attributes for the thread whose ID is specified in pid.
-pub fn set_attr(pid: Pid, attr: Attributes) -> Result<(), Errno> {
+pub fn set_attr(pid: Pid, attr: Attributes) -> Result<(), std::io::Error> {
     let mut attr = SchedAttr {
         size: mem::size_of::<SchedAttr>() as u32,
         sched_policy: attr.policy.into_raw(),
@@ -229,12 +234,14 @@ pub fn set_attr(pid: Pid, attr: Attributes) -> Result<(), Errno> {
         sched_util_max: attr.sched_util_max,
     };
 
-    unsafe { sched_set_attr(pid.as_raw(), &mut attr, 0) }.and(Ok(()))
+    unsafe { sched_set_attr(pid.as_raw(), &mut attr, 0) }
+        .or(Err(std::io::Error::last_os_error()))
+        .and(Ok(()))
 }
 
 /// Sets the scheduling policy with a `nice` value to other.
 /// See [Attributes::nice] for more info.
-pub fn set_other(pid: Pid, nice: i32) -> Result<(), Errno> {
+pub fn set_other(pid: Pid, nice: i32) -> Result<(), std::io::Error> {
     let att_other = Attributes {
         policy: Policy::Normal,
         nice,
@@ -248,7 +255,7 @@ pub fn set_other(pid: Pid, nice: i32) -> Result<(), Errno> {
     };
     set_attr(pid, att_other)
 }
-pub fn set_batch(pid: Pid, nice: i32) -> Result<(), Errno> {
+pub fn set_batch(pid: Pid, nice: i32) -> Result<(), std::io::Error> {
     let att_batch = Attributes {
         policy: Policy::Batch,
         nice,
@@ -262,7 +269,7 @@ pub fn set_batch(pid: Pid, nice: i32) -> Result<(), Errno> {
     };
     set_attr(pid, att_batch)
 }
-pub fn set_idle(pid: Pid) -> Result<(), Errno> {
+pub fn set_idle(pid: Pid) -> Result<(), std::io::Error> {
     let att_batch = Attributes {
         policy: Policy::Idle,
         nice: 0,
@@ -276,7 +283,7 @@ pub fn set_idle(pid: Pid) -> Result<(), Errno> {
     };
     set_attr(pid, att_batch)
 }
-pub fn set_fifo(pid: Pid, priority: u32) -> Result<(), Errno> {
+pub fn set_fifo(pid: Pid, priority: u32) -> Result<(), std::io::Error> {
     let att_batch = Attributes {
         policy: Policy::Fifo,
         nice: 0,
@@ -290,7 +297,7 @@ pub fn set_fifo(pid: Pid, priority: u32) -> Result<(), Errno> {
     };
     set_attr(pid, att_batch)
 }
-pub fn set_rr(pid: Pid, priority: u32) -> Result<(), Errno> {
+pub fn set_rr(pid: Pid, priority: u32) -> Result<(), std::io::Error> {
     let att_batch = Attributes {
         policy: Policy::RoundRobin,
         nice: 0,
@@ -309,14 +316,14 @@ pub fn set_deadline(
     deadline_ns: u64,
     period_ns: u64,
     runtime_ns: u64,
-) -> Result<(), Errno> {
+) -> Result<(), std::io::Error> {
     if !((runtime_ns <= deadline_ns) && (deadline_ns <= period_ns)) {
         println!("Error: params are not sched_runtime <= sched_deadline <= sched_period!");
-        return Err(Errno::EINVAL);
+        return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
     };
     if runtime_ns < 1024 || deadline_ns < 1024 || period_ns < 1024 {
         println!("Error: params are y1024");
-        return Err(Errno::EINVAL);
+        return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
     }
     let att_batch = Attributes {
         policy: Policy::Deadline,
@@ -332,26 +339,173 @@ pub fn set_deadline(
     set_attr(pid, att_batch)
 }
 
-pub fn get_priority_max(pol: Policy) -> Result<usize, Errno> {
-    unsafe { sched::sched_get_priority_max(pol.into_raw() as c_int) }
+pub fn get_priority_max(pol: Policy) -> Result<usize, std::io::Error> {
+    let ret = unsafe { libc::sched_get_priority_max(pol.into_raw() as c_int) };
+    ret_into_result(ret).map(|val| val as usize)
 }
 
-pub fn get_priority_min(pol: Policy) -> Result<usize, Errno> {
-    unsafe { sched::sched_get_priority_min(pol.into_raw() as c_int) }
+pub fn get_priority_min(pol: Policy) -> Result<usize, std::io::Error> {
+    let ret = unsafe { libc::sched_get_priority_min(pol.into_raw() as c_int) };
+    ret_into_result(ret).map(|val| val as usize)
 }
 
-pub fn sched_yield() -> Result<(), Errno> {
-    unsafe { sched::sched_yield() }.and(Ok(()))
+pub fn sched_yield() -> Result<(), std::io::Error> {
+    let ret = unsafe { libc::sched_yield() };
+    ret_to_result(ret, ())
 }
 
-pub fn set_affinity(pid: Pid, set: CpuSet) -> Result<(), Errno> {
-    unsafe { sched_set_affinity(pid.as_raw(), CpuSet::size_of(), set.as_raw()).and(Ok(())) }
+pub fn set_affinity(pid: Pid, set: CpuSet) -> Result<(), std::io::Error> {
+    let ret = unsafe {
+        libc::sched_setaffinity(
+            pid.as_raw(),
+            CpuSet::size_of(),
+            set.as_raw() as *const libc::cpu_set_t,
+        )
+    };
+    ret_to_result(ret, ())
 }
 
-pub fn get_affinity(pid: Pid) -> Result<CpuSet, Errno> {
+pub fn get_affinity(pid: Pid) -> Result<CpuSet, std::io::Error> {
     let mut cpuset = CpuSet::empty();
-    unsafe { sched_get_affinity(pid.as_raw(), CpuSet::size_of(), cpuset.as_mut_raw()) }
-        .and(Ok(cpuset))
+    let ret = unsafe {
+        libc::sched_getaffinity(
+            pid.as_raw(),
+            CpuSet::size_of(),
+            cpuset.as_mut_raw() as *mut libc::cpu_set_t,
+        )
+    };
+    ret_to_result(ret, cpuset)
+}
+
+#[cfg(target_pointer_width = "32")]
+const CPU_SET_SIZE: usize = 32;
+#[cfg(target_pointer_width = "32")]
+type Map = u32;
+#[cfg(not(target_pointer_width = "32"))]
+const CPU_SET_SIZE: usize = 16;
+#[cfg(not(target_pointer_width = "32"))]
+type Map = u64;
+
+/// A CPU affinity mask is represented by this structure.
+#[repr(C)]
+#[derive(PartialEq, Clone)]
+pub struct CpuSet {
+    bits: [Map; CPU_SET_SIZE],
+}
+impl CpuSet {
+    /// Create a empty [CpuSet]
+    pub const fn empty() -> Self {
+        Self {
+            bits: [0; CPU_SET_SIZE],
+        }
+    }
+
+    /// Create a [CpuSet] from a bitmask
+    pub const fn from_bitmask(bitmask: u64) -> Self {
+        let mut cpuset = CpuSet::empty();
+        #[cfg(not(target_pointer_width = "32"))]
+        {
+            cpuset.bits[0] = bitmask;
+        }
+        #[cfg(target_pointer_width = "32")]
+        {
+            let bytes = bitmask.to_le_bytes();
+            let low = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+            let high = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
+            cpuset.bits[0] = low;
+            cpuset.bits[1] = high;
+        }
+        cpuset
+    }
+
+    /// Create a [CpuSet] from a slice of cores
+    pub fn from_slice(slice_of_cores: impl AsRef<[usize]>) -> Self {
+        let mut cpuset = CpuSet::empty();
+        slice_of_cores.as_ref().iter().for_each(|core| {
+            cpuset.set(*core);
+        });
+        cpuset
+    }
+
+    /// Create a full [CpuSet]
+    pub const fn full() -> Self {
+        Self {
+            bits: [Map::MAX; CPU_SET_SIZE],
+        }
+    }
+
+    pub(crate) const fn as_raw(&self) -> *const CpuSet {
+        self
+    }
+
+    pub(crate) const fn as_mut_raw(&mut self) -> *mut CpuSet {
+        self
+    }
+
+    /// Add CPU `core` to the [CpuSet] using the builder pattern.
+    pub const fn insert(self, core: usize) -> Self {
+        let mut cs = self;
+        cs.set(core);
+        cs
+    }
+
+    /// Add CPU `core` to the [CpuSet].
+    pub const fn set(&mut self, core: usize) {
+        let idx = core / Map::BITS as usize;
+        let bit = core % Map::BITS as usize;
+        self.bits[idx] |= 1 << bit;
+    }
+
+    /// Clear CPU `core` from the [CpuSet] using the builder pattern.
+    pub const fn remove(self, core: usize) -> Self {
+        let mut cs = self;
+        cs.clear(core);
+        cs
+    }
+
+    /// Clear CPU `core` from the [CpuSet].
+    pub const fn clear(&mut self, core: usize) {
+        let idx = core / Map::BITS as usize;
+        let bit = core % Map::BITS as usize;
+        self.bits[idx] &= !(1 << bit);
+    }
+
+    /// Checks whether the `core` is set in the [CpuSet].
+    pub const fn is_set(&self, core: usize) -> bool {
+        let idx = core / Map::BITS as usize;
+        let bit = core % Map::BITS as usize;
+        self.bits[idx] & (1 << bit) > 0
+    }
+
+    /// Returns the size of [CpuSet] in bytes
+    pub const fn size_of() -> usize {
+        size_of::<Self>()
+    }
+
+    /// Return the maximum number of CPU in CpuSet
+    pub const fn count() -> usize {
+        Self::size_of() * 8
+    }
+
+    pub fn used_cores(&self) -> Vec<usize> {
+        let mut cores = Vec::new();
+
+        for core in 0..CPU_SET_SIZE * Map::BITS as usize {
+            if self.is_set(core) {
+                cores.push(core);
+            }
+        }
+
+        cores
+    }
+}
+
+impl Debug for CpuSet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CpuSet")
+            .field("cores", &self.used_cores())
+            .finish()
+    }
 }
 
 #[cfg(test)]
@@ -435,4 +589,146 @@ mod tests {
         let set = set.insert(0);
         set_affinity(Pid::this(), set).unwrap();
     }
+
+    #[test]
+    fn test_cpuset() {
+        let test = CpuSet::full();
+
+        assert_eq!(
+            test,
+            CpuSet {
+                #[cfg(not(target_pointer_width = "32"))]
+                bits: [u64::MAX; 16],
+                #[cfg(target_pointer_width = "32")]
+                bits: [u32::MAX; 32],
+            },
+        );
+
+        let test = CpuSet::empty();
+        assert_eq!(
+            test,
+            CpuSet {
+                #[cfg(not(target_pointer_width = "32"))]
+                bits: [0; 16],
+                #[cfg(target_pointer_width = "32")]
+                bits: [0; 32],
+            }
+        );
+
+        let test = CpuSet::empty().insert(1);
+
+        assert_eq!(
+            test,
+            CpuSet {
+                #[cfg(not(target_pointer_width = "32"))]
+                bits: [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                #[cfg(target_pointer_width = "32")]
+                bits: [
+                    2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0
+                ],
+            }
+        );
+
+        let test = CpuSet::from_slice([1, 2]);
+
+        assert_eq!(
+            test,
+            CpuSet {
+                #[cfg(not(target_pointer_width = "32"))]
+                bits: [6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                #[cfg(target_pointer_width = "32")]
+                bits: [
+                    6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0
+                ],
+            }
+        );
+    }
+
+    #[test]
+    fn test_cpuset_ops() {
+        let test = CpuSet {
+            #[cfg(not(target_pointer_width = "32"))]
+            bits: [0xFFFF, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            #[cfg(target_pointer_width = "32")]
+            bits: [
+                0xFFFF, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0,
+            ],
+        }
+        .remove(0);
+        assert_eq!(test.bits[0], 0xFFFE);
+        let test = test.remove(7).remove(9).remove(8).remove(4);
+        assert_eq!(test.bits[0], 0xFC6E);
+        #[cfg(not(target_pointer_width = "32"))]
+        assert_eq!(CpuSet::empty().insert(63).bits[0], 0x8000000000000000);
+        #[cfg(target_pointer_width = "32")]
+        assert_eq!(CpuSet::empty().set(63).bits[1], 0x80000000);
+
+        #[cfg(not(target_pointer_width = "32"))]
+        assert_eq!(CpuSet::empty().insert(64).bits[1], 1);
+        #[cfg(target_pointer_width = "32")]
+        assert_eq!(CpuSet::empty().set(64).bits[3], 1);
+
+        #[cfg(not(target_pointer_width = "32"))]
+        assert_eq!(
+            CpuSet::from_bitmask(0x808000841000410).bits[0],
+            0x808000841000410
+        );
+        #[cfg(target_pointer_width = "32")]
+        assert_eq!(
+            CpuSet::from_bitmask(0x808000841000410).bits[0..=1],
+            [0x41000410, 0x8080008]
+        );
+    }
+
+    #[test]
+    fn test_cpuset_usedcores() {
+        let test = CpuSet {
+            #[cfg(not(target_pointer_width = "32"))]
+            bits: [0x66, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            #[cfg(target_pointer_width = "32")]
+            bits: [
+                0x66, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0,
+            ],
+        };
+        assert_eq!(test.used_cores(), vec![1, 2, 5, 6])
+    }
+
+    #[test]
+    fn test_cpuset_debug() {
+        let cpuset = CpuSet {
+            #[cfg(not(target_pointer_width = "32"))]
+            bits: [0x66, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            #[cfg(target_pointer_width = "32")]
+            bits: [
+                0x66, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0,
+            ],
+        };
+
+        let output = format!("{:?}", cpuset);
+
+        assert_eq!(output, "CpuSet { cores: [1, 2, 5, 6] }");
+    }
+
+    // #[test]
+    // fn test_affinity() {
+    //     let mut cs_libc = unsafe { std::mem::zeroed() };
+    //     unsafe { libc::CPU_ZERO(&mut cs_libc) };
+    //     let ret_libc =
+    //         unsafe { libc::sched_getaffinity(0, size_of_val(&cs_libc), &mut cs_libc as *mut _) };
+    //     assert_eq!(ret_libc, 0);
+
+    //     let mut cs = CpuSet::empty();
+    //     let ret = unsafe { sched_get_affinity(0, CpuSet::size_of(), cs.as_mut_raw()) };
+    //     assert!(ret.is_ok());
+    //     assert!(ret.unwrap() > 0); // Check whether the result reflects at least one byte being written.
+    //     assert_eq!(
+    //         unsafe { std::mem::transmute::<libc::cpu_set_t, [Map; CPU_SET_SIZE]>(cs_libc) },
+    //         cs.bits
+    //     );
+    // }
 }
