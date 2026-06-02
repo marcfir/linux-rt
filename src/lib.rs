@@ -1,7 +1,7 @@
 #[warn(missing_docs)]
 /// Time functions
 pub mod clock;
-#[cfg(target_os = "linux")]
+#[cfg(target_family = "unix")]
 mod linux;
 /// Memory functions
 pub mod mman;

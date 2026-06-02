@@ -67,7 +67,7 @@ bitflags! {
 /// # Windows
 /// Uses the VirtualLock function (memoryapi.h) see [here](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtuallock)
 pub unsafe fn mlock(addr: *const c_void, len: usize) -> Result<(), std::io::Error> {
-    #[cfg(target_os = "linux")]
+    #[cfg(target_family = "unix")]
     {
         crate::linux::mman::mlock(addr, len)
     }
@@ -91,7 +91,7 @@ pub unsafe fn mlock2(
     len: usize,
     flags: MmanFlags,
 ) -> Result<(), std::io::Error> {
-    #[cfg(target_os = "linux")]
+    #[cfg(target_family = "unix")]
     {
         crate::linux::mman::mlock2(addr, len, flags)
     }
@@ -110,7 +110,7 @@ pub unsafe fn mlock2(
 /// # Windows
 /// Uses the VirtualUnlock function (memoryapi.h) see [here](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtualunlock)
 pub unsafe fn munlock(addr: *const c_void, len: usize) -> Result<(), std::io::Error> {
-    #[cfg(target_os = "linux")]
+    #[cfg(target_family = "unix")]
     {
         crate::linux::mman::munlock(addr, len)
     }
@@ -134,7 +134,7 @@ pub unsafe fn munlock(addr: *const c_void, len: usize) -> Result<(), std::io::Er
 /// # Windows
 /// Not supported. Call ignored.
 pub fn mlockall(flags: MmanFlags) -> Result<(), std::io::Error> {
-    #[cfg(target_os = "linux")]
+    #[cfg(target_family = "unix")]
     {
         crate::linux::mman::mlockall(flags)
     }
@@ -151,7 +151,7 @@ pub fn mlockall(flags: MmanFlags) -> Result<(), std::io::Error> {
 /// # Windows
 /// Not supported. Call ignored.
 pub fn munlockall() -> Result<(), std::io::Error> {
-    #[cfg(target_os = "linux")]
+    #[cfg(target_family = "unix")]
     {
         crate::linux::mman::munlockall()
     }

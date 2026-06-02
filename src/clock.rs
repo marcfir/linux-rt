@@ -42,13 +42,13 @@ pub enum ClockId {
     /// increased) time values.
     ClockMonotonic,
 }
-#[cfg(target_os = "linux")]
+#[cfg(target_family = "unix")]
 impl ClockId {
     /// Get the raw `clockid_t`.
     pub const fn as_raw(&self) -> libc::clockid_t {
         match self {
             ClockId::ClockRealtime => libc::CLOCK_REALTIME,
-
+            #[cfg(target_os = "linux")]
             ClockId::ClockTai => libc::CLOCK_TAI,
             ClockId::ClockMonotonic => libc::CLOCK_MONOTONIC,
         }
@@ -244,7 +244,7 @@ impl PartialOrd for TimeSpec {
 
 /// Retrieve the time of the specified clock [ClockId].
 pub fn get_time(clockid: ClockId) -> Result<TimeSpec, std::io::Error> {
-    #[cfg(target_os = "linux")]
+    #[cfg(target_family = "unix")]
     {
         crate::linux::clock::get_time(clockid)
     }
@@ -256,7 +256,7 @@ pub fn get_time(clockid: ClockId) -> Result<TimeSpec, std::io::Error> {
 
 /// Set the time `tp` of the specified clock [ClockId].
 pub fn set_time(clockid: ClockId, ts: TimeSpec) -> Result<(), std::io::Error> {
-    #[cfg(target_os = "linux")]
+    #[cfg(target_family = "unix")]
     {
         crate::linux::clock::set_time(clockid, ts)
     }
@@ -277,7 +277,7 @@ pub fn set_time(clockid: ClockId, ts: TimeSpec) -> Result<(), std::io::Error> {
 /// function, or the process is terminated. The clock used to measure
 /// the time shall be the clock specified by [ClockId].
 pub fn nanosleep_relative(clockid: ClockId, ts: TimeSpec) -> Result<(), std::io::Error> {
-    #[cfg(target_os = "linux")]
+    #[cfg(target_family = "unix")]
     {
         crate::linux::clock::nanosleep_relative(clockid, ts)
     }
@@ -296,7 +296,7 @@ pub fn nanosleep_relative(clockid: ClockId, ts: TimeSpec) -> Result<(), std::io:
 /// specified clock, then [nanosleep_absolute] shall return immediately
 /// and the calling process shall not be suspended.
 pub fn nanosleep_absolute(clockid: ClockId, ts: TimeSpec) -> Result<(), std::io::Error> {
-    #[cfg(target_os = "linux")]
+    #[cfg(target_family = "unix")]
     {
         crate::linux::clock::nanosleep_absolute(clockid, ts)
     }
@@ -313,7 +313,7 @@ pub fn nanosleep_relative_with_remain(
     clockid: ClockId,
     ts: TimeSpec,
 ) -> Result<TimeSpec, std::io::Error> {
-    #[cfg(target_os = "linux")]
+    #[cfg(target_family = "unix")]
     {
         crate::linux::clock::nanosleep_relative_with_remain(clockid, ts)
     }
@@ -328,7 +328,7 @@ pub fn nanosleep_absolute_with_remain(
     clockid: ClockId,
     ts: TimeSpec,
 ) -> Result<TimeSpec, std::io::Error> {
-    #[cfg(target_os = "linux")]
+    #[cfg(target_family = "unix")]
     {
         crate::linux::clock::nanosleep_absolute_with_remain(clockid, ts)
     }
