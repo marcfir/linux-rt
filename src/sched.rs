@@ -110,7 +110,7 @@ pub fn set_deadline(
         return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
     };
     if runtime_ns < 1024 || deadline_ns < 1024 || period_ns < 1024 {
-        println!("Error: params are y1024");
+        println!("Error: params are > 1024");
         return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
     }
     let att_batch = Attributes {

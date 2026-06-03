@@ -47,7 +47,6 @@ pub fn get_attr(pid: Pid) -> Result<Attributes, std::io::Error> {
 }
 
 pub fn set_attr(pid: Pid, attr: Attributes) -> Result<(), std::io::Error> {
-    println!("{attr:?}");
     match attr.policy {
         Policy::Ext | Policy::Normal => {
             unsafe { SetPriorityClass(pid.process_handle, NORMAL_PRIORITY_CLASS)? };
@@ -62,7 +61,6 @@ pub fn set_attr(pid: Pid, attr: Attributes) -> Result<(), std::io::Error> {
             unsafe { SetPriorityClass(pid.process_handle, REALTIME_PRIORITY_CLASS)? };
         }
     }
-    println!("{attr:?}");
     match attr.policy {
         Policy::Fifo | Policy::RoundRobin | Policy::Deadline => {
             unsafe { SetThreadPriority(pid.thread_handle, rt_priority_to_win(attr.priority))? };

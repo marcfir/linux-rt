@@ -85,9 +85,7 @@ pub fn sleep_absolute_realtime(ts: TimeSpec) -> Result<(), std::io::Error> {
 #[inline]
 pub fn sleep_absolute_monotonic(ts: TimeSpec) -> Result<(), std::io::Error> {
     let now = clock_gettime_monotonic()?;
-    println!("{now:?} {ts:?}");
     let relative_sleep = (ts - now).as_nanoseconds().max(0) as u64;
-    println!("{relative_sleep}");
     std::thread::sleep(Duration::from_nanos(relative_sleep));
     Ok(())
 }
