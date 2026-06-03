@@ -4,10 +4,10 @@ version = "0.5.0"
 edition = "2021"
 authors = ["Marc Fischer <marcfir@proton.me>"]
 license = "MIT OR Apache-2.0"
-description = "Rust friendly wrapper for Linux Real-time functions"
-keywords = ["scheduling", "linux", "rt", "real-time"]
-categories = ["os::linux-apisos::linux-apissched"]
-repository = "https://github.com/marcfir/linux-rt"
+description = "Systems crate for tuning low-latency and real-time applications in Rust"
+keywords = ["low-latency", "linux", "rt", "real-time"]
+categories = ["os"]
+repository = "https://github.com/marcfir/rt_tunex"
 
 [dependencies]
 bitflags = "2.11"
