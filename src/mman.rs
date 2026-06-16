@@ -25,6 +25,7 @@ bitflags! {
         /// populated by the lock when the mapping is created.
         /// MCL_ONFAULT must be used with either MCL_CURRENT or
         /// MCL_FUTURE or both.
+        #[cfg(target_os = "linux")]
         const MCL_ONFAULT = libc::MCL_ONFAULT;
     }
 }
@@ -170,6 +171,11 @@ mod test {
     #[test]
     fn test_mlockall() {
         mlockall(MmanFlags::MCL_FUTURE).unwrap();
+    }
+
+    #[test]
+    fn test_mlockall_empty() {
+        mlockall(MmanFlags::empty()).unwrap();
     }
 
     #[test]

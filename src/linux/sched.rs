@@ -3,6 +3,7 @@ use crate::{
     sched::{Attributes, CpuSet, Pid, Policy, SchedFlags},
 };
 use std::{ffi::c_int, fmt::Debug};
+#[cfg(target_os = "linux")]
 use syscalls::{syscall, Errno, Sysno};
 
 #[allow(non_camel_case_types)]
@@ -48,10 +49,12 @@ pub struct SchedAttr {
 /// `pid`. If `pid` equals zero, the scheduling policy and attributes of
 /// the calling thread will be set.
 #[allow(clippy::missing_safety_doc)]
+#[cfg(target_os = "linux")]
 pub unsafe fn sched_set_attr(pid: pid_t, attr: *mut SchedAttr, flags: u32) -> Result<usize, Errno> {
     syscall!(Sysno::sched_setattr, pid, attr, flags)
 }
 #[allow(clippy::missing_safety_doc)]
+#[cfg(target_os = "linux")]
 pub unsafe fn sched_get_attr(
     pid: pid_t,
     attr: *mut SchedAttr,
@@ -64,65 +67,144 @@ pub unsafe fn sched_get_attr(
 /// The [get_attr()] function wraps the `sched_getattr()` system call and fetches the scheduling policy and
 /// the associated attributes for the thread whose ID is specified in pid.
 pub fn get_attr(pid: Pid) -> Result<Attributes, std::io::Error> {
-    let mut attr = SchedAttr {
-        size: 0,
-        sched_policy: 0,
-        sched_flags: 0,
-        sched_nice: 0,
-        sched_priority: 0,
-        sched_runtime: 0,
-        sched_deadline: 0,
-        sched_period: 0,
-        sched_util_min: 0,
-        sched_util_max: 0,
-    };
+    #[cfg(target_os = "linux")]
+    {
+        let mut attr = SchedAttr {
+            size: 0,
+            sched_policy: 0,
+            sched_flags: 0,
+            sched_nice: 0,
+            sched_priority: 0,
+            sched_runtime: 0,
+            sched_deadline: 0,
+            sched_period: 0,
+            sched_util_min: 0,
+            sched_util_max: 0,
+        };
 
-    let ret = unsafe {
-        sched_get_attr(
-            pid.as_raw(),
-            &mut attr,
-            core::mem::size_of::<SchedAttr>() as u32,
-            0,
-        )
-    };
-    match ret {
-        Ok(_) => {
-            let a = Attributes {
-                policy: Policy::from_raw(attr.sched_policy).unwrap(),
-                flags: SchedFlags::from_bits_truncate(attr.sched_flags as i16),
-                nice: attr.sched_nice,
-                priority: attr.sched_priority,
-                deadline_ns: attr.sched_deadline,
-                period_ns: attr.sched_period,
-                runtime_ns: attr.sched_runtime,
-                sched_util_min: attr.sched_util_min,
-                sched_util_max: attr.sched_util_max,
-            };
-            Ok(a)
+        let ret = unsafe {
+            sched_get_attr(
+                pid.as_raw(),
+                &mut attr,
+                core::mem::size_of::<SchedAttr>() as u32,
+                0,
+            )
+        };
+        match ret {
+            Ok(_) => {
+                let a = Attributes {
+                    policy: Policy::from_raw(attr.sched_policy).unwrap(),
+                    flags: SchedFlags::from_bits_truncate(attr.sched_flags as i16),
+                    nice: attr.sched_nice,
+                    priority: attr.sched_priority,
+                    deadline_ns: attr.sched_deadline,
+                    period_ns: attr.sched_period,
+                    runtime_ns: attr.sched_runtime,
+                    sched_util_min: attr.sched_util_min,
+                    sched_util_max: attr.sched_util_max,
+                };
+                Ok(a)
+            }
+            Err(_) => Err(std::io::Error::last_os_error()),
         }
-        Err(_) => Err(std::io::Error::last_os_error()),
+    }
+    #[cfg(target_os = "macos")]
+    {
+        use libc::{
+            thread_policy_flavor_t, thread_policy_t, thread_precedence_policy_data_t, thread_t,
+            THREAD_EXTENDED_POLICY, THREAD_PRECEDENCE_POLICY, THREAD_PRECEDENCE_POLICY_COUNT,
+            THREAD_TIME_CONSTRAINT_POLICY,
+        };
+
+        let mut policy = thread_precedence_policy_data_t { importance: 0 };
+
+        let mut count = THREAD_PRECEDENCE_POLICY_COUNT;
+        let mut get_default = 0;
+
+        let ret = unsafe {
+            libc::thread_policy_get(
+                pid.as_raw() as thread_t,
+                THREAD_PRECEDENCE_POLICY as thread_policy_flavor_t,
+                &raw mut policy as thread_policy_t,
+                &mut count,
+                &mut get_default,
+            )
+        };
+
+        ret_to_result(
+            ret,
+            Attributes {
+                policy: match policy.importance {
+                    THREAD_PRECEDENCE_POLICY | THREAD_EXTENDED_POLICY => Policy::Normal,
+                    THREAD_TIME_CONSTRAINT_POLICY => Policy::Fifo,
+                    _ => Policy::Normal,
+                },
+                flags: SchedFlags::empty(),
+                nice: 0,
+                priority: 0,
+                runtime_ns: 0,
+                deadline_ns: 0,
+                period_ns: 0,
+                sched_util_min: 0,
+                sched_util_max: 0,
+            },
+        )
     }
 }
 
 /// The [set_attr()] function wraps the `sched_setattr()` system call and sets the scheduling policy and
 /// associated attributes for the thread whose ID is specified in pid.
 pub fn set_attr(pid: Pid, attr: Attributes) -> Result<(), std::io::Error> {
-    let mut attr = SchedAttr {
-        size: core::mem::size_of::<SchedAttr>() as u32,
-        sched_policy: attr.policy.into_raw(),
-        sched_flags: attr.flags.bits() as u64,
-        sched_nice: attr.nice,
-        sched_priority: attr.priority,
-        sched_runtime: attr.runtime_ns,
-        sched_deadline: attr.deadline_ns,
-        sched_period: attr.period_ns,
-        sched_util_min: attr.sched_util_min,
-        sched_util_max: attr.sched_util_max,
-    };
+    #[cfg(target_os = "linux")]
+    {
+        let mut attr = SchedAttr {
+            size: core::mem::size_of::<SchedAttr>() as u32,
+            sched_policy: attr.policy.into_raw(),
+            sched_flags: attr.flags.bits() as u64,
+            sched_nice: attr.nice,
+            sched_priority: attr.priority,
+            sched_runtime: attr.runtime_ns,
+            sched_deadline: attr.deadline_ns,
+            sched_period: attr.period_ns,
+            sched_util_min: attr.sched_util_min,
+            sched_util_max: attr.sched_util_max,
+        };
+        unsafe { sched_set_attr(pid.as_raw(), &mut attr, 0) }
+            .or(Err(std::io::Error::last_os_error()))
+            .and(Ok(()))
+    }
 
-    unsafe { sched_set_attr(pid.as_raw(), &mut attr, 0) }
-        .or(Err(std::io::Error::last_os_error()))
-        .and(Ok(()))
+    #[cfg(target_os = "macos")]
+    {
+        use libc::{
+            thread_precedence_policy_data_t, THREAD_STANDARD_POLICY, THREAD_TIME_CONSTRAINT_POLICY,
+        };
+
+        let importance = match attr.policy {
+            Policy::Ext | Policy::Normal => THREAD_STANDARD_POLICY,
+            Policy::Batch => THREAD_STANDARD_POLICY,
+            Policy::Idle => THREAD_STANDARD_POLICY,
+            Policy::Fifo | Policy::RoundRobin | Policy::Deadline => THREAD_TIME_CONSTRAINT_POLICY,
+        };
+
+        let policy = thread_precedence_policy_data_t { importance };
+
+        let ret = unsafe {
+            use libc::{
+                thread_policy_flavor_t, thread_t, THREAD_PRECEDENCE_POLICY,
+                THREAD_PRECEDENCE_POLICY_COUNT,
+            };
+
+            libc::thread_policy_set(
+                pid.as_raw() as thread_t,
+                THREAD_PRECEDENCE_POLICY as thread_policy_flavor_t,
+                &policy as *const _ as *mut i32,
+                THREAD_PRECEDENCE_POLICY_COUNT,
+            )
+        };
+
+        ret_to_result(ret, ())
+    }
 }
 
 pub fn get_priority_max(pol: Policy) -> Result<isize, std::io::Error> {
@@ -141,6 +223,7 @@ pub fn sched_yield() -> Result<(), std::io::Error> {
 }
 
 pub fn set_affinity(pid: Pid, set: CpuSet) -> Result<(), std::io::Error> {
+    #[cfg(target_os = "linux")]
     let ret = unsafe {
         libc::sched_setaffinity(
             pid.as_raw(),
@@ -148,29 +231,82 @@ pub fn set_affinity(pid: Pid, set: CpuSet) -> Result<(), std::io::Error> {
             set.as_raw() as *const libc::cpu_set_t,
         )
     };
+    #[cfg(target_os = "macos")]
+    let ret = {
+        use libc::thread_affinity_policy_data_t;
+        use libc::thread_t;
+        use libc::{
+            thread_policy_flavor_t, thread_policy_t, THREAD_AFFINITY_POLICY,
+            THREAD_AFFINITY_POLICY_COUNT,
+        };
+
+        let policy = thread_affinity_policy_data_t {
+            affinity_tag: set.bits[0] as c_int,
+        };
+
+        unsafe {
+            libc::thread_policy_set(
+                pid.as_raw() as thread_t,
+                THREAD_AFFINITY_POLICY as thread_policy_flavor_t,
+                &raw const policy as thread_policy_t,
+                THREAD_AFFINITY_POLICY_COUNT,
+            )
+        }
+    };
     ret_to_result(ret, ())
 }
 
 pub fn get_affinity(pid: Pid) -> Result<CpuSet, std::io::Error> {
-    let mut cpuset = CpuSet::empty();
-    let ret = unsafe {
-        libc::sched_getaffinity(
-            pid.as_raw(),
-            CpuSet::size_of(),
-            cpuset.as_mut_raw() as *mut libc::cpu_set_t,
-        )
-    };
-    ret_to_result(ret, cpuset)
+    #[cfg(target_os = "linux")]
+    {
+        let mut cpuset = CpuSet::empty();
+        let ret = unsafe {
+            libc::sched_getaffinity(
+                pid.as_raw(),
+                CpuSet::size_of(),
+                cpuset.as_mut_raw() as *mut libc::cpu_set_t,
+            )
+        };
+
+        ret_to_result(ret, cpuset)
+    }
+    #[cfg(target_os = "macos")]
+    {
+        use libc::thread_affinity_policy_data_t;
+        use libc::thread_t;
+        use libc::{
+            thread_policy_flavor_t, thread_policy_t, THREAD_AFFINITY_POLICY,
+            THREAD_AFFINITY_POLICY_COUNT,
+        };
+
+        let mut policy: thread_affinity_policy_data_t =
+            thread_affinity_policy_data_t { affinity_tag: 0 };
+        let mut count = THREAD_AFFINITY_POLICY_COUNT;
+        let mut get_default = 0;
+
+        let ret = unsafe {
+            libc::thread_policy_get(
+                pid.as_raw() as thread_t,
+                THREAD_AFFINITY_POLICY as thread_policy_flavor_t,
+                &raw mut policy as thread_policy_t,
+                &mut count,
+                &mut get_default,
+            )
+        };
+        let mut cpuset = CpuSet::empty();
+        cpuset.bits[0] = policy.affinity_tag as crate::sched::Map;
+        ret_to_result(ret, cpuset)
+    }
 }
 
 #[cfg(test)]
 mod test {
 
-    use super::*;
-    use std::mem;
-
+    #[cfg(target_os = "linux")]
     #[test]
     fn set_attr() {
+        use super::*;
+        use std::mem;
         let mut attr = SchedAttr {
             size: mem::size_of::<SchedAttr>() as u32,
             sched_policy: SCHED_IDLE,

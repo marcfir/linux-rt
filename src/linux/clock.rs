@@ -15,11 +15,19 @@ pub fn set_time(clockid: ClockId, ts: TimeSpec) -> Result<(), std::io::Error> {
     ret_to_result(ret, ())
 }
 
-pub fn nanosleep_relative(clockid: ClockId, ts: TimeSpec) -> Result<(), std::io::Error> {
+pub fn nanosleep_relative(_clockid: ClockId, ts: TimeSpec) -> Result<(), std::io::Error> {
+    #[cfg(target_os = "linux")]
     let ret = unsafe {
         libc::clock_nanosleep(
-            clockid.as_raw(),
+            _clockid.as_raw(),
             0,
+            &raw const ts as *const libc::timespec,
+            core::ptr::null_mut(),
+        )
+    };
+    #[cfg(target_os = "macos")]
+    let ret = unsafe {
+        libc::nanosleep(
             &raw const ts as *const libc::timespec,
             core::ptr::null_mut(),
         )
@@ -27,6 +35,7 @@ pub fn nanosleep_relative(clockid: ClockId, ts: TimeSpec) -> Result<(), std::io:
     ret_to_result(ret, ())
 }
 pub fn nanosleep_absolute(clockid: ClockId, ts: TimeSpec) -> Result<(), std::io::Error> {
+    #[cfg(target_os = "linux")]
     let ret = unsafe {
         libc::clock_nanosleep(
             clockid.as_raw(),
@@ -35,17 +44,39 @@ pub fn nanosleep_absolute(clockid: ClockId, ts: TimeSpec) -> Result<(), std::io:
             core::ptr::null_mut(),
         )
     };
+    #[cfg(target_os = "macos")]
+    let ret = {
+        let now = get_time(clockid)?;
+        let relative_sleep = (ts - now).as_nanoseconds().max(0) as u64;
+        unsafe {
+            libc::nanosleep(
+                &raw const relative_sleep as *const libc::timespec,
+                core::ptr::null_mut(),
+            )
+        }
+    };
     ret_to_result(ret, ())
 }
 pub fn nanosleep_relative_with_remain(
-    clockid: ClockId,
+    _clockid: ClockId,
     ts: TimeSpec,
 ) -> Result<TimeSpec, std::io::Error> {
     let mut remaining = TimeSpec::zeroed();
+    #[cfg(target_os = "linux")]
+    {
+        let ret = unsafe {
+            libc::clock_nanosleep(
+                _clockid.as_raw(),
+                0,
+                &raw const ts as *const libc::timespec,
+                &raw mut remaining as *mut libc::timespec,
+            )
+        };
+    }
+
+    #[cfg(target_os = "macos")]
     let ret = unsafe {
-        libc::clock_nanosleep(
-            clockid.as_raw(),
-            0,
+        libc::nanosleep(
             &raw const ts as *const libc::timespec,
             &raw mut remaining as *mut libc::timespec,
         )
@@ -57,6 +88,7 @@ pub fn nanosleep_absolute_with_remain(
     ts: TimeSpec,
 ) -> Result<TimeSpec, std::io::Error> {
     let mut remaining = TimeSpec::zeroed();
+    #[cfg(target_os = "linux")]
     let ret = unsafe {
         libc::clock_nanosleep(
             clockid.as_raw(),
@@ -64,6 +96,17 @@ pub fn nanosleep_absolute_with_remain(
             &raw const ts as *const libc::timespec,
             &raw mut remaining as *mut libc::timespec,
         )
+    };
+    #[cfg(target_os = "macos")]
+    let ret = {
+        let now = get_time(clockid)?;
+        let relative_sleep = (ts - now).as_nanoseconds().max(0) as u64;
+        unsafe {
+            libc::nanosleep(
+                &raw const relative_sleep as *const libc::timespec,
+                &raw mut remaining as *mut libc::timespec,
+            )
+        }
     };
     ret_to_result(ret, remaining)
 }

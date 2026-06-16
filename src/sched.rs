@@ -330,7 +330,10 @@ pub struct Attributes {
 /// Newtype arround `pid_t`
 #[cfg(target_family = "unix")]
 #[derive(Debug, PartialEq, Clone, Copy)]
-pub struct Pid(libc::pid_t);
+pub struct Pid(
+    #[cfg(target_os = "linux")] libc::pid_t,
+    #[cfg(target_os = "macos")] mach2::mach_types::thread_port_t,
+);
 /// Process identifier.
 /// Newtype arround `pid_t`
 #[cfg(target_os = "windows")]
@@ -340,7 +343,7 @@ pub struct Pid {
     pub(crate) thread_handle: windows::Win32::Foundation::HANDLE,
 }
 
-#[cfg(target_family = "unix")]
+#[cfg(target_os = "linux")]
 impl Pid {
     /// Gets a raw `pid_t` from a [Pid]
     pub fn as_raw(&self) -> libc::pid_t {
@@ -351,14 +354,30 @@ impl Pid {
         Self(raw)
     }
 }
+#[cfg(target_os = "macos")]
+impl Pid {
+    /// Gets a raw `pid_t` from a [Pid]
+    pub fn as_raw(&self) -> mach2::mach_types::thread_port_t {
+        self.0
+    }
+    /// Creates a [Pid] from a raw `pid_t`
+    pub fn from_raw(raw: mach2::mach_types::thread_port_t) -> Self {
+        Self(raw)
+    }
+}
 
 impl Pid {
     /// Returns the [Pid] of the calling process/thread
     pub fn this() -> Self {
-        #[cfg(target_family = "unix")]
+        #[cfg(target_os = "linux")]
         {
             Self(0)
         }
+        #[cfg(target_os = "macos")]
+        {
+            Self(unsafe { mach2::mach_init::mach_thread_self() })
+        }
+
         #[cfg(target_os = "windows")]
         {
             Self {
@@ -371,11 +390,11 @@ impl Pid {
 #[cfg(target_pointer_width = "32")]
 const CPU_SET_SIZE: usize = 32;
 #[cfg(target_pointer_width = "32")]
-type Map = u32;
+pub(crate) type Map = u32;
 #[cfg(not(target_pointer_width = "32"))]
 const CPU_SET_SIZE: usize = 16;
 #[cfg(not(target_pointer_width = "32"))]
-type Map = u64;
+pub(crate) type Map = u64;
 
 /// A CPU affinity mask is represented by this structure.
 #[repr(C)]
@@ -396,7 +415,7 @@ impl CpuSet {
         let mut cpuset = CpuSet::empty();
         #[cfg(not(target_pointer_width = "32"))]
         {
-            cpuset.bits[0] = bitmask;
+            cpuset.bits[0] = bitmask as Map;
         }
         #[cfg(target_pointer_width = "32")]
         {
@@ -424,11 +443,11 @@ impl CpuSet {
             bits: [Map::MAX; CPU_SET_SIZE],
         }
     }
-    #[cfg(target_family = "unix")]
+    #[cfg(target_os = "linux")]
     pub(crate) const fn as_raw(&self) -> *const CpuSet {
         self
     }
-    #[cfg(target_family = "unix")]
+    #[cfg(target_os = "linux")]
     pub(crate) const fn as_mut_raw(&mut self) -> *mut CpuSet {
         self
     }
@@ -593,9 +612,9 @@ mod tests {
             test,
             CpuSet {
                 #[cfg(not(target_pointer_width = "32"))]
-                bits: [u64::MAX; 16],
+                bits: [Map::MAX; 16],
                 #[cfg(target_pointer_width = "32")]
-                bits: [u32::MAX; 32],
+                bits: [Map::MAX; 32],
             },
         );
 
