@@ -63,16 +63,14 @@ pub fn nanosleep_relative_with_remain(
 ) -> Result<TimeSpec, std::io::Error> {
     let mut remaining = TimeSpec::zeroed();
     #[cfg(target_os = "linux")]
-    {
-        let ret = unsafe {
-            libc::clock_nanosleep(
-                _clockid.as_raw(),
-                0,
-                &raw const ts as *const libc::timespec,
-                &raw mut remaining as *mut libc::timespec,
-            )
-        };
-    }
+    let ret = unsafe {
+        libc::clock_nanosleep(
+            _clockid.as_raw(),
+            0,
+            &raw const ts as *const libc::timespec,
+            &raw mut remaining as *mut libc::timespec,
+        )
+    };
 
     #[cfg(target_os = "macos")]
     let ret = unsafe {

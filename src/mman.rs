@@ -175,7 +175,8 @@ mod test {
 
     #[test]
     fn test_mlockall_empty() {
-        mlockall(MmanFlags::empty()).unwrap();
+        // mlockall requires at least one of MCL_CURRENT/MCL_FUTURE; empty flags is invalid (EINVAL).
+        assert!(mlockall(MmanFlags::empty()).is_err());
     }
 
     #[test]
